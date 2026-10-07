@@ -4,9 +4,11 @@ import {
   assignDeduction,
   deleteAssignedDeduction,
   listAssignedDeductions,
+  updateAssignedDeductionAmount,
 } from "@services/AssignSalaryComponentService";
 import {
   AssignModal,
+  EditableAmountCell,
   MONTHS,
   YEARS,
 } from "./EmployeeWiseAllowance";
@@ -204,7 +206,16 @@ export default function EmployeeWiseDeduction() {
                     {MONTHS.find((m) => m.value === Number(row.month))?.label || row.month}/
                     {row.year}
                   </td>
-                  <td className="px-4 py-3 tabular-nums">{Number(row.amount || 0).toFixed(2)}</td>
+                  <td className="px-4 py-3 tabular-nums">
+                    <EditableAmountCell
+                      value={row.amount}
+                      onSave={async (amt) => {
+                        await updateAssignedDeductionAmount(row.id, amt);
+                        toast.success("Amount updated");
+                        await loadAssignments();
+                      }}
+                    />
+                  </td>
                   <td className="px-4 py-3 text-slate-600">
                     {String(row.deduct_from || "").toLowerCase() === "basic"
                       ? "Basic salary"

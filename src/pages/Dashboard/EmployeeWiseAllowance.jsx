@@ -5,11 +5,14 @@ import {
   assignAllowance,
   deleteAssignedAllowance,
   listAssignedAllowances,
+  updateAssignedAllowanceAmount,
 } from "@services/AssignSalaryComponentService";
 import {
   Building2,
   CalendarRange,
+  Check,
   Loader2,
+  Pencil,
   Plus,
   Search,
   Trash2,
@@ -44,6 +47,83 @@ export function looksLikeSalaryAdvance(...parts) {
   if (["advance", "salaryadvance", "advancesalary"].includes(compact)) return true;
   if (compact.includes("salaryadvance") || compact.includes("advancesalary")) return true;
   return /\badvance\b/.test(n);
+}
+
+export function EditableAmountCell({ value, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const start = () => {
+    setDraft(String(Number(value || 0)));
+    setEditing(true);
+  };
+
+  const save = async () => {
+    if (draft === "" || Number.isNaN(Number(draft)) || Number(draft) < 0) {
+      toast.error("Enter a valid amount");
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(Number(draft));
+      setEditing(false);
+    } catch (err) {
+      console.error(err);
+      toast.error(err.response?.data?.message || "Failed to update amount");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!editing) {
+    return (
+      <span className="inline-flex items-center gap-2">
+        {Number(value || 0).toFixed(2)}
+        <button
+          type="button"
+          onClick={start}
+          className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+          title="Change amount for this employee"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <input
+        type="number"
+        min="0"
+        step="0.01"
+        value={draft}
+        autoFocus
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") save();
+          if (e.key === "Escape") setEditing(false);
+        }}
+        className="w-24 rounded-lg border border-slate-300 px-2 py-1 text-sm"
+      />
+      <button
+        type="button"
+        onClick={save}
+        disabled={saving}
+        className="rounded p-1 text-emerald-600 hover:bg-emerald-50 disabled:opacity-50"
+      >
+        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+      </button>
+      <button
+        type="button"
+        onClick={() => setEditing(false)}
+        className="rounded p-1 text-slate-400 hover:bg-slate-100"
+      >
+        <X className="h-4 w-4" />
+      </button>
+    </span>
+  );
 }
 
 function isSalaryAdvanceItem(item, nameKey, codeKey) {
@@ -238,7 +318,16 @@ export default function EmployeeWiseAllowance() {
                     {MONTHS.find((m) => m.value === Number(row.month))?.label || row.month}/
                     {row.year}
                   </td>
-                  <td className="px-4 py-3 tabular-nums">{Number(row.amount || 0).toFixed(2)}</td>
+                  <td className="px-4 py-3 tabular-nums">
+                    <EditableAmountCell
+                      value={row.amount}
+                      onSave={async (amt) => {
+                        await updateAssignedAllowanceAmount(row.id, amt);
+                        toast.success("Amount updated");
+                        await loadAssignments();
+                      }}
+                    />
+                  </td>
                   <td className="px-4 py-3">
                     <button
                       type="button"
@@ -371,8 +460,9 @@ function AssignModal({
   const canNextFrom1 = !!itemId && (applyTo === "all" ? !!companyId : !!employee?.id);
   const canNextFrom2 =
     valueType === "fixed"
-      ? months > 0 && months <= 36
+      ? months > 0 && months <= 36 && (amount === "" || Number(amount) >= 0)
       : amount !== "" && Number(amount) >= 0;
+  const fixedAmount = amount === "" ? Number(selected?.amount || 0) : Number(amount);
 
   const handleSubmit = async () => {
     if (!canNextFrom1 || !canNextFrom2) return;
@@ -395,6 +485,7 @@ function AssignModal({
         to_month: Number(toMonth),
         to_year: Number(toYear),
       });
+      if (amount !== "") payload.amount = Number(amount);
     } else {
       Object.assign(payload, {
         month: Number(month),
@@ -580,7 +671,7 @@ function AssignModal({
                     <CalendarRange className="mb-2 h-5 w-5" />
                     <div className="text-sm font-semibold">Fixed</div>
                     <div className="mt-1 text-xs text-slate-500">
-                      Month range. Uses master amount. Stops after end month.
+                      Month range. Master amount or your own amount. Stops after end month.
                     </div>
                   </button>
                   <button
@@ -619,6 +710,20 @@ function AssignModal({
                   {months > 36 && (
                     <p className="text-xs text-rose-600">Range cannot exceed 36 months.</p>
                   )}
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-600">
+                      Amount per month {applyTo === "employee" ? "for this employee" : "for each employee"}
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      placeholder={`Leave blank to use master amount (${Number(selected?.amount || 0).toFixed(2)})`}
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
+                    />
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-3 rounded-xl border border-slate-100 bg-slate-50 p-4">
@@ -668,7 +773,7 @@ function AssignModal({
                 <li>
                   <strong>Amount:</strong>{" "}
                   {valueType === "fixed"
-                    ? Number(selected?.amount || 0).toFixed(2)
+                    ? `${fixedAmount.toFixed(2)}${amount === "" ? " (master)" : " (custom)"}`
                     : Number(amount || 0).toFixed(2)}
                 </li>
                 <li>

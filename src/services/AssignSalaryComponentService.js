@@ -15,6 +15,11 @@ export const deleteAssignedAllowance = async (id) => {
   return response.data;
 };
 
+export const updateAssignedAllowanceAmount = async (id, amount) => {
+  const response = await axios.put(`/assign/allowances/${id}`, { amount });
+  return response.data;
+};
+
 export const listAssignedDeductions = async (params = {}) => {
   const response = await axios.get("/assign/deductions", { params });
   return response.data.data || [];
@@ -27,5 +32,10 @@ export const assignDeduction = async (payload) => {
 
 export const deleteAssignedDeduction = async (id) => {
   const response = await axios.delete(`/assign/deductions/${id}`);
+  return response.data;
+};
+
+export const updateAssignedDeductionAmount = async (id, amount) => {
+  const response = await axios.put(`/assign/deductions/${id}`, { amount });
   return response.data;
 };
