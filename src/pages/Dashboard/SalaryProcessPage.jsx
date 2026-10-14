@@ -426,6 +426,7 @@ const SalaryProcessPage = () => {
       { label: "Probation Leave Deduction", amount: Number(breakdown.probation_deduction || 0) },
       { label: "Stamp Duty", amount: Number(breakdown.stamp_duty || 0) },
       // --------------------------
+      { label: `Before Joining NoPay (${breakdown.pre_hire_nopay_days || 0} days) → Basic`, amount: Number(breakdown.pre_hire_nopay_basic || 0) },
       ...(loanBasicPrincipal > 0 ? [{ label: "Loan Installment (Principal) → Basic", amount: loanBasicPrincipal }] : []),
       ...(loanBasicInterest > 0 ? [{ label: "Loan Interest → Basic", amount: loanBasicInterest }] : []),
       ...(salaryAdvanceBasic > 0 ? [{ label: "Salary Advance → Basic", amount: salaryAdvanceBasic }] : []),
@@ -468,6 +469,14 @@ const SalaryProcessPage = () => {
       {
         label: "Leave Shortfall NoPay → Monthly Bonus",
         amount: Number(breakdown.leave_shortfall_nopay_bonus_deduction || 0),
+      },
+      {
+        label: `Personal Out NoPay (${breakdown.personal_out_nopay_days || 0} days) → Monthly Bonus`,
+        amount: Number(breakdown.personal_out_nopay_deduction || 0),
+      },
+      {
+        label: `Before Joining NoPay (${breakdown.pre_hire_nopay_days || 0} days) → Monthly Bonus`,
+        amount: Number(breakdown.pre_hire_nopay_bonus || 0),
       },
       { label: "Short Leave Penalty (Late)", amount: Number(breakdown.short_leave_deduction || 0) },
       { label: "Half Day Penalty (Late)", amount: Number(breakdown.half_day_deduction || 0) },

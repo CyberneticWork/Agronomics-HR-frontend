@@ -86,6 +86,14 @@ const EmployeeSalaryCard = ({ employee, empId, isSelected, onSelect, onDownload 
   const lateGraceHint = breakdown.late_grace_enabled
     ? `${breakdown.late_grace_excess_minutes || 0} min over ${breakdown.late_grace_start_time || "07:15"} + ${breakdown.late_grace_grace_minutes ?? 15} min grace (${breakdown.late_grace_late_days || 0} day(s)) → ${breakdown.late_grace_nopay_days || 0} NoPay day(s)`
     : "";
+  const personalOutNoPay = Number(breakdown.personal_out_nopay_deduction || 0);
+  const personalOutDays = Number(breakdown.personal_out_nopay_days || 0);
+  const preHireDays = Number(breakdown.pre_hire_nopay_days || 0);
+  const preHireBasic = Number(breakdown.pre_hire_nopay_basic || 0);
+  const preHireBonus = Number(breakdown.pre_hire_nopay_bonus || 0);
+  const preHireHint = preHireDays > 0
+    ? `${preHireDays} day(s) before joining on ${breakdown.date_of_joining || "-"} × /${breakdown.nopay_working_days || 30}`
+    : "";
   const shortLeaveLate = Number(breakdown.short_leave_deduction || 0);
   const halfDayLate = Number(breakdown.half_day_deduction || 0);
   const epfEmployee = Number(breakdown.epf_employee_deduction || 0);
@@ -137,6 +145,9 @@ const EmployeeSalaryCard = ({ employee, empId, isSelected, onSelect, onDownload 
         : `(basic + bonus)/${breakdown.nopay_working_days || 30} split`,
     },
     { label: "Probation Leave Deduction", amount: probationDeduction },
+    ...(preHireBasic > 0
+      ? [{ label: "Before Joining NoPay → Basic", amount: preHireBasic, hint: preHireHint }]
+      : []),
     {
       label: "Late >30m NoPay → Basic",
       amount: excessLateBasic,
@@ -179,13 +190,23 @@ const EmployeeSalaryCard = ({ employee, empId, isSelected, onSelect, onDownload 
         ? `${leaveShortfallDays} day(s) × monthly bonus/${breakdown.nopay_working_days || 30}`
         : `(basic + bonus)/${breakdown.nopay_working_days || 30} split`,
     },
+    ...(personalOutNoPay > 0
+      ? [{
+        label: "Personal Out NoPay → Monthly Bonus",
+        amount: personalOutNoPay,
+        hint: `${personalOutDays} day(s) without leave balance × (basic + bonus)/${breakdown.nopay_working_days || 30}`,
+      }]
+      : []),
+    ...(preHireBonus > 0
+      ? [{ label: "Before Joining NoPay → Monthly Bonus", amount: preHireBonus, hint: preHireHint }]
+      : []),
     {
       label: "Total NoPay under Monthly Bonus",
       amount: Number(
         breakdown.bonus_nopay_total
-        ?? (leaveShortfallBonusNoPay + majorLateNoPay)
+        ?? (leaveShortfallBonusNoPay + majorLateNoPay + personalOutNoPay + preHireBonus)
       ),
-      hint: "Leave shortfall bonus portion + late deduction NoPay (summary only)",
+      hint: "Leave shortfall + late + personal out + before-joining NoPay (summary only)",
       infoOnly: true,
     },
     { label: "Short Leave Penalty (Late)", amount: shortLeaveLate },

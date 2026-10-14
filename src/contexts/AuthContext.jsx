@@ -8,6 +8,7 @@ const AuthContext = createContext();
 const MODULE_ALIASES = {
   employeemaster: ["show"],
   show: ["employeemaster"],
+  personalout: ["nopaymanagement"],
 };
 
 function isFullAccessUser(user) {
