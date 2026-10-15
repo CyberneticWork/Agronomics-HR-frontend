@@ -192,7 +192,8 @@ export default function PersonalOut() {
             <DoorOpen className="h-6 w-6" /> Personal Out
           </h1>
           <p className="mt-1 text-sm text-slate-300">
-            Staff going out during working hours. Up to 2 hours = short leave (0.25), more than 2 hours = half day (0.5).
+            Staff going out during working hours. The first 30 minutes are allowed with no deduction. Above that,
+            up to 2 hours = short leave (0.25), more than 2 hours = half day (0.5).
             Taken from Casual, then Annual leave. If there is no leave balance it becomes NoPay deducted from the Monthly Bonus (not basic).
           </p>
         </div>
@@ -295,7 +296,7 @@ export default function PersonalOut() {
                 <button
                   type="button"
                   onClick={save}
-                  disabled={saving || !preview?.deduct_days}
+                  disabled={saving || preview?.minutes == null}
                   className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-white disabled:opacity-50"
                 >
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -320,7 +321,7 @@ export default function PersonalOut() {
                       </div>
                     ))}
                   </div>
-                  {preview.deduct_days ? (
+                  {preview.minutes != null ? (
                     <>
                       <p>
                         Out for <span className="font-semibold">{fmtMinutes(preview.minutes)}</span> →{" "}
@@ -399,6 +400,11 @@ export default function PersonalOut() {
                   <td className="px-3 py-2">{fmtMinutes(row.minutes)}</td>
                   <td className="px-3 py-2">
                     <div className="flex flex-wrap gap-1">
+                      {!(row.allocation || []).length && (
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-600">
+                          No deduction (within 30 min)
+                        </span>
+                      )}
                       {(row.allocation || []).map((part) => (
                         <span key={part.source} className={`rounded-full border px-2 py-0.5 text-xs ${sourceBadge(part.source)}`}>
                           {part.source === "NoPay" ? "NoPay (Bonus)" : part.source}: {part.days}
