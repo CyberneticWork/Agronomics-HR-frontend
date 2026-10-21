@@ -5,6 +5,7 @@ import Swal from 'sweetalert2';
 import * as XLSX from 'xlsx';
 import DatePickerInput from '@components/DatePickerInput';
 import HikvisionDevicePanel from '@components/HikvisionDevicePanel';
+import ZktecoDevicePanel from '@components/ZktecoDevicePanel';
 import hikvisionService from '@services/hikvisionService';
 import useAcl from '../../hooks/useAcl';
 
@@ -1192,6 +1193,7 @@ const TimeCard = ({ employeeProfile }) => {
           <div className="p-4 sm:p-6 lg:p-8">
 
             <HikvisionDevicePanel companies={companies} />
+            <ZktecoDevicePanel companies={companies} />
 
             <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
