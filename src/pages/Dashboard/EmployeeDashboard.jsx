@@ -409,6 +409,7 @@ const EmployeeDashboard = ({
         const stampDuty = parseFloat(sb.stamp_duty || sb.stamp || 0);
         const noPay = parseFloat(sb.full_day_nopay_deduction || sb.no_pay_deduction || 0);
         const otherDeductions = parseFloat(sb.total_fixed_deductions || 0);
+        const fishDeduction = parseFloat(sb.fish_deduction || 0);
         const totalDeductions = parseFloat(sb.total_deductions || 0);
         const netSalary = parseFloat(sb.net_salary || basicSalary);
         const period = latestSalaryRecord ? `${latestSalaryRecord.month}/${latestSalaryRecord.year}` : `${new Date().getMonth() + 1}/${new Date().getFullYear()}`;
@@ -523,6 +524,12 @@ const EmployeeDashboard = ({
                         <div className="flex justify-between py-1 border-b border-gray-100">
                           <span className="text-gray-600">No Pay</span>
                           <span className="font-semibold">Rs. {noPay.toLocaleString()}</span>
+                        </div>
+                      )}
+                      {fishDeduction > 0 && (
+                        <div className="flex justify-between py-1 border-b border-cyan-100 bg-cyan-50/50 px-1 rounded">
+                          <span className="text-gray-700 font-medium">FISH</span>
+                          <span className="font-semibold text-gray-900">Rs. {fishDeduction.toLocaleString()}</span>
                         </div>
                       )}
                       {otherDeductions > 0 && (

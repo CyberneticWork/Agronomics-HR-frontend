@@ -8,7 +8,19 @@ import React, {
 import config from "@src/config";
 
 const EmployeeFormContext = createContext();
-//
+
+const toBool = (val, defaultValue = false) => {
+  if (val === undefined || val === null) return defaultValue;
+  if (typeof val === "boolean") return val;
+  if (typeof val === "number") return val === 1;
+  if (typeof val === "string") {
+    const s = val.trim().toLowerCase();
+    if (s === "1" || s === "true" || s === "yes" || s === "on") return true;
+    if (s === "0" || s === "false" || s === "no" || s === "off") return false;
+  }
+  return Boolean(val);
+};
+
 const initialState = {
   personal: {
     id: "",
@@ -91,6 +103,9 @@ const initialState = {
     budgetaryReliefAllowance2015: false,
     budgetaryReliefAllowance2016: false,
     stamp: false,
+    paye_active: false,
+    holiday_processing: false,
+    off_day_processing: false,
   },
   organization: {
     company: "",
@@ -408,25 +423,53 @@ export const EmployeeFormProvider = ({ children }) => {
         bankAccountNo: employeeData.compensation?.bank_account_no || "",
         accountHolderName: employeeData.compensation?.account_holder_name || "",
         comments: employeeData.compensation?.comments || "",
-        secondaryEmp: employeeData.compensation?.secondary_emp || false,
-        primaryEmploymentBasic: employeeData.compensation?.primary_emp_basic || false,
-        enableEpfEtf: employeeData.compensation?.enable_epf_etf || false,
-        otActive: employeeData.compensation?.ot_active || false,
-        otActiveSpecial: false,
-        earlyDeduction: employeeData.compensation?.early_deduction || false,
-        incrementActive: employeeData.compensation?.increment_active || false,
-        nopayActive: employeeData.compensation?.active_nopay || false,
-        morningOt: employeeData.compensation?.ot_morning || false,
+        secondaryEmp: toBool(employeeData.compensation?.secondary_emp ?? employeeData.compensation?.secondaryEmp),
+        primaryEmploymentBasic: toBool(
+          employeeData.compensation?.primary_emp_basic ??
+          employeeData.compensation?.primary_employment_basic ??
+          employeeData.compensation?.primaryEmploymentBasic
+        ),
+        enableEpfEtf: toBool(employeeData.compensation?.enable_epf_etf ?? employeeData.compensation?.enableEpfEtf),
+        otActive: toBool(employeeData.compensation?.ot_active ?? employeeData.compensation?.otActive),
+        otActiveSpecial: toBool(employeeData.compensation?.ot_active_special ?? employeeData.compensation?.otActiveSpecial),
+        earlyDeduction: toBool(employeeData.compensation?.early_deduction ?? employeeData.compensation?.earlyDeduction),
+        incrementActive: toBool(employeeData.compensation?.increment_active ?? employeeData.compensation?.incrementActive),
+        nopayActive: toBool(
+          employeeData.compensation?.active_nopay ??
+          employeeData.compensation?.nopay_active ??
+          employeeData.compensation?.nopayActive
+        ),
+        morningOt: toBool(employeeData.compensation?.ot_morning ?? employeeData.compensation?.morningOt),
         ot_morning_rate: employeeData.compensation?.ot_morning_rate || "0",
         ot_night_rate: employeeData.compensation?.ot_night_rate || "0",
-        eveningOt: employeeData.compensation?.ot_evening || false,
-        morningOtSpecial: employeeData.compensation?.ot_morning_special || false,
+        eveningOt: toBool(employeeData.compensation?.ot_evening ?? employeeData.compensation?.eveningOt),
+        morningOtSpecial: toBool(employeeData.compensation?.ot_morning_special ?? employeeData.compensation?.morningOtSpecial),
         ot_morning_rate_special: "0",
         ot_night_rate_special: "0",
-        eveningOtSpecial: employeeData.compensation?.ot_evening_special || false,
-        budgetaryReliefAllowance2015: employeeData.compensation?.br1 || false,
-        budgetaryReliefAllowance2016: employeeData.compensation?.br2 || false,
-        stamp: employeeData.compensation?.stamp || false,
+        eveningOtSpecial: toBool(employeeData.compensation?.ot_evening_special ?? employeeData.compensation?.eveningOtSpecial),
+        budgetaryReliefAllowance2015: toBool(
+          employeeData.compensation?.br1 ??
+          employeeData.compensation?.budgetary_relief_allowance_2015 ??
+          employeeData.compensation?.budgetaryReliefAllowance2015
+        ),
+        budgetaryReliefAllowance2016: toBool(
+          employeeData.compensation?.br2 ??
+          employeeData.compensation?.budgetary_relief_allowance_2016 ??
+          employeeData.compensation?.budgetaryReliefAllowance2016
+        ),
+        stamp: toBool(employeeData.compensation?.stamp),
+        paye_active: toBool(
+          employeeData.compensation?.paye_active ?? employeeData.compensation?.payeActive,
+          false
+        ),
+        holiday_processing: toBool(
+          employeeData.compensation?.holiday_processing ?? employeeData.compensation?.holidayProcessing,
+          false
+        ),
+        off_day_processing: toBool(
+          employeeData.compensation?.off_day_processing ?? employeeData.compensation?.offDayProcessing,
+          false
+        ),
       },
       organization: {
         // Selects use id values — never put designation name in the designation field

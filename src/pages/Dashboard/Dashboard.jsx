@@ -155,6 +155,9 @@ import PendingPayments from "../Dashboard/PendingPayments";
 import CompanyNotices from "../Dashboard/CompanyNotices";
 
 import DinnerAllowance from "@dashboard/DinnerAllowance";
+import FishDeductionManagement from "./FishDeductionManagement";
+import PayeManagement from "@dashboard/PayeManagement";
+import OffDayHolidayManagement from "@dashboard/OffDayHolidayManagement";
 
 
 import MidShiftBreaks from "@dashboard/MidShiftBreaks";
@@ -858,6 +861,18 @@ const Dashboard = ({ user, onLogout }) => {
             )}
           </ProtectedComponent>
         );
+      case "payeManagement":
+        return (
+          <ProtectedComponent module="payeManagement" action="view">
+            <PayeManagement />
+          </ProtectedComponent>
+        );
+      case "offDayHolidayManagement":
+        return (
+          <ProtectedComponent module="offDayHolidayManagement" action="view">
+            <OffDayHolidayManagement />
+          </ProtectedComponent>
+        );
       case "resignation":
         return (
           <ProtectedComponent module="resignation" action="view">
@@ -1298,6 +1313,12 @@ const Dashboard = ({ user, onLogout }) => {
         return (
           <ProtectedComponent module="dinnerAllowance" action="view">
             <DinnerAllowance />
+          </ProtectedComponent>
+        );
+      case "fishDeduction":
+        return (
+          <ProtectedComponent module="fishDeduction" action="view">
+            <FishDeductionManagement />
           </ProtectedComponent>
         );
       case "chatbot":

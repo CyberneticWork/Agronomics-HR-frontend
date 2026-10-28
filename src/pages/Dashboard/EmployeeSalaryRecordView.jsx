@@ -320,6 +320,18 @@ const SalaryRecordDetail = ({ record, onBack }) => {
                 <span className="font-semibold text-gray-900">Rs. {parseFloat(sb.ot_night_fees || 0).toLocaleString()}</span>
               </div>
             )}
+            {sb.holiday_amount > 0 && (
+              <div className="flex justify-between bg-white p-3 rounded-lg">
+                <span className="text-gray-700">Holiday Pay</span>
+                <span className="font-semibold text-emerald-600">Rs. {parseFloat(sb.holiday_amount || 0).toLocaleString()}</span>
+              </div>
+            )}
+            {sb.off_day_amount > 0 && (
+              <div className="flex justify-between bg-white p-3 rounded-lg">
+                <span className="text-gray-700">Off-Day Pay</span>
+                <span className="font-semibold text-teal-600">Rs. {parseFloat(sb.off_day_amount || 0).toLocaleString()}</span>
+              </div>
+            )}
             {sb.total_allowances > 0 && (
               <div className="flex justify-between bg-white p-3 rounded-lg">
                 <span className="text-gray-700">Other Allowances</span>
@@ -327,8 +339,8 @@ const SalaryRecordDetail = ({ record, onBack }) => {
               </div>
             )}
             <div className="border-t-2 border-green-300 pt-3 flex justify-between bg-white p-3 rounded-lg font-bold">
-              <span className="text-gray-900">Total Earnings</span>
-              <span className="text-green-600">Rs. {parseFloat(sb.gross_salary || 0).toLocaleString()}</span>
+              <span className="text-gray-900">{sb.is_jaysea_process ? "Total Earnings" : "Total Earnings"}</span>
+              <span className="text-green-600">Rs. {parseFloat(sb.total_earnings || sb.gross_salary || 0).toLocaleString()}</span>
             </div>
           </div>
         </div>
@@ -352,14 +364,34 @@ const SalaryRecordDetail = ({ record, onBack }) => {
               <span className="text-gray-700">EPF (8%)</span>
               <span className="font-semibold text-gray-900">Rs. {parseFloat(sb.epf_employee_deduction || 0).toLocaleString()}</span>
             </div>
+            {(parseFloat(sb.paye_deduction || 0) > 0 || parseFloat(sb.paye_amount || 0) > 0) && (
+              <div className="flex justify-between bg-white p-3 rounded-lg border-l-4 border-amber-500">
+                <span className="text-gray-700 font-medium">PAYE / APIT</span>
+                <span className="font-semibold text-gray-900">Rs. {parseFloat(sb.paye_deduction || sb.paye_amount).toLocaleString()}</span>
+              </div>
+            )}
+            {parseFloat(sb.advance_salary || 0) > 0 && (
+              <div className="flex justify-between bg-white p-3 rounded-lg">
+                <span className="text-gray-700">Salary Advance</span>
+                <span className="font-semibold text-gray-900">Rs. {parseFloat(sb.advance_salary).toLocaleString()}</span>
+              </div>
+            )}
             <div className="flex justify-between bg-white p-3 rounded-lg">
               <span className="text-gray-700">Loan Installment</span>
               <span className="font-semibold text-gray-900">Rs. {parseFloat((sb.loan_principal || 0) + (sb.loan_interest || 0)).toLocaleString()}</span>
             </div>
-            <div className="flex justify-between bg-white p-3 rounded-lg">
-              <span className="text-gray-700">Stamp Duty</span>
-              <span className="font-semibold text-gray-900">Rs. {parseFloat(sb.stamp_duty || 0).toLocaleString()}</span>
-            </div>
+            {parseFloat(sb.stamp_duty || 0) > 0 && (
+              <div className="flex justify-between bg-white p-3 rounded-lg">
+                <span className="text-gray-700">Stamp Duty</span>
+                <span className="font-semibold text-gray-900">Rs. {parseFloat(sb.stamp_duty || 0).toLocaleString()}</span>
+              </div>
+            )}
+            {parseFloat(sb.fish_deduction || 0) > 0 && (
+              <div className="flex justify-between bg-white p-3 rounded-lg border-l-4 border-cyan-500">
+                <span className="text-gray-700 font-medium">FISH</span>
+                <span className="font-semibold text-gray-900">Rs. {parseFloat(sb.fish_deduction).toLocaleString()}</span>
+              </div>
+            )}
             <div className="flex justify-between bg-white p-3 rounded-lg">
               <span className="text-gray-700">Other Deductions</span>
               <span className="font-semibold text-gray-900">Rs. {parseFloat(sb.total_fixed_deductions || 0).toLocaleString()}</span>

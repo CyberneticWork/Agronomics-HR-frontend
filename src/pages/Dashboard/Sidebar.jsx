@@ -51,14 +51,19 @@ const Sidebar = ({
     if (branding?.name) setCompanyName(branding.name);
   }, [branding]);
 
+  const [currentCompany, setCurrentCompany] = useState(null);
+
   useEffect(() => {
     if (isEmployeeUser(user)) return;
     let cancelled = false;
     (async () => {
       const rows = await fetchCompanies();
       const list = Array.isArray(rows) ? rows : [];
-      const active = list.find((row) => row.portal_active) || list[0];
+      const active =
+        list.find((row) => (user?.company_id && Number(row.id) === Number(user.company_id)) || row.portal_active) ||
+        list[0];
       if (cancelled || !active) return;
+      setCurrentCompany(active);
       if (active.logo_url) setCompanyLogo(active.logo_url);
       if (active.name) setCompanyName(active.name);
     })();
@@ -115,6 +120,7 @@ const Sidebar = ({
               { id: "createNewDeduction", name: "Deduction" },
               { id: "createNewBonus", name: "Bonus" },
               { id: "dinnerAllowance", name: "Dinner Allowance" },
+              { id: "fishDeduction", name: "Fish Deduction" },
             ],
           },
           {
@@ -132,6 +138,8 @@ const Sidebar = ({
             subItems: [
               { id: "SalaryProcessPage", name: "Salary Process" },
               { id: "SalaryPage", name: "View Salary" },
+              { id: "payeManagement", name: "PAYE Management" },
+              { id: "offDayHolidayManagement", name: "Off-Day & Holiday" },
             ],
           },
           {
@@ -249,6 +257,29 @@ const Sidebar = ({
         const alwaysShowItems = ["dashboard", "myProfile", "changePassword"];
         if (alwaysShowItems.includes(item.id)) return item;
         if (isAdmin && ["userManagement", "accessControl", "laborManagement"].includes(item.id)) {
+          return item;
+        }
+
+        // Company feature toggle check for Fish Deduction
+        if (item.id === "fishDeduction") {
+          const isFishDeductionOn = !!(
+            user?.is_super_admin ||
+            (currentCompany?.process_config?.fish_deduction?.enabled ??
+              currentCompany?.process_config?.fish_deduction === true)
+          );
+          if (!isFishDeductionOn) return null;
+          if (!hasPermission("fishDeduction", "view")) return null;
+          return item;
+        }
+
+        // Company feature toggle check for Stamp Duty, PAYE, Holiday & Off-Day Processing
+        if (["payeManagement", "offDayHolidayManagement"].includes(item.id)) {
+          const isStampPayeHolidayOn = !!(
+            currentCompany?.process_config?.stamp_duty_paye_holiday?.enabled ??
+            currentCompany?.process_config?.stamp_duty_paye_holiday === true
+          );
+          if (!isStampPayeHolidayOn) return null;
+          if (!hasPermission(item.id, "view")) return null;
           return item;
         }
 
@@ -586,6 +617,10 @@ const Sidebar = ({
           subItems: [
             { id: "SalaryProcessPage", name: "Salary Process" },
             { id: "SalaryPage", name: "View Salary" },
+            ...(user?.role !== 'employee' ? [
+              { id: "payeManagement", name: "PAYE Management" },
+              { id: "offDayHolidayManagement", name: "Off-Day & Holiday" },
+            ] : []),
             ...(user?.role === 'employee' ? [{ id: "salaryRecords", name: "Salary Records" }] : []),
             ...(user?.role === 'employee' ? [{ id: "downloadSalarySlip", name: "Download Salary Slip" }] : []),
           ],

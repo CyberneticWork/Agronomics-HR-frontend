@@ -6,6 +6,7 @@ import {
   Printer,
   Clock,
   User,
+  DollarSign,
   RefreshCw,
   ChevronLeft,
   ChevronRight,
@@ -45,6 +46,7 @@ const NoPayManagement = () => {
     totalRecords: 0,
     totalDays: 0,
     affectedEmployees: 0,
+    totalAmount: 0,
   });
 
   const months = [
@@ -113,13 +115,16 @@ const NoPayManagement = () => {
 
       const response = await NoPayService.getAllRecords(params);
 
-      const items = response?.data ?? [];
-      setNoPayRecords(Array.isArray(items) ? items : []);
+      const rawItems = response?.data ?? [];
+      const items = Array.isArray(rawItems)
+        ? rawItems.filter((r) => r.active_nopay !== false && r.employee?.compensation?.active_nopay !== false)
+        : [];
+      setNoPayRecords(items);
 
       setTotalRecords(
         response?.total ??
         response?.meta?.total ??
-        (Array.isArray(items) ? items.length : 0)
+        items.length
       );
 
       setSelectedRecords([]);
@@ -163,6 +168,7 @@ const NoPayManagement = () => {
         totalRecords: data.total_records ?? 0,
         totalDays: data.total_days ?? 0,
         affectedEmployees: data.affected_employees ?? 0,
+        totalAmount: data.total_amount ?? 0,
       });
     } catch (error) {
       console.error("Error fetching stats:", error);
@@ -569,6 +575,7 @@ const NoPayManagement = () => {
                 <th>Emp No</th>
                 <th>Name</th>
                 <th>No Pay Count</th>
+                <th>No-Pay Amount (Rs.)</th>
                 <th>Type & Description</th>
                 <th>Status</th>
               </tr>
@@ -584,6 +591,7 @@ const NoPayManagement = () => {
                   <td>${record.employee?.attendance_employee_no || "N/A"}</td>
                   <td>${record.employee?.full_name || "N/A"}</td>
                   <td>${formatNoPayDisplay(record)}</td>
+                  <td>Rs. ${Number(record.no_pay_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   <td>
                     <strong>${record.type === 'LATE_IN' ? 'Late In' : record.type === 'EARLY_OUT' ? 'Early Out' : 'Full Day'}</strong>
                     <br/>
@@ -818,6 +826,7 @@ const NoPayManagement = () => {
                           <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Emp No</th>
                           <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
                           <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">No Pay Count</th>
+                          <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">No-Pay Amount</th>
                           <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type & Description</th>
                           <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                           <th className="px-6 py-4 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
@@ -861,6 +870,12 @@ const NoPayManagement = () => {
 
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-medium">
                                 {formatNoPayDisplay(record)}
+                              </td>
+
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-rose-600">
+                                {record.no_pay_amount != null
+                                  ? `Rs. ${Number(record.no_pay_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                  : "-"}
                               </td>
 
                               <td className="px-6 py-4">
@@ -1011,7 +1026,7 @@ const NoPayManagement = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mt-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mt-6">
           <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
             <div className="flex items-center justify-between">
               <div>
@@ -1044,6 +1059,20 @@ const NoPayManagement = () => {
               </div>
               <div className="p-3 bg-blue-100 rounded-xl">
                 <User className="w-6 h-6 text-blue-600" />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Total Deduction</p>
+                <p className="text-2xl font-bold text-rose-600">
+                  Rs. {Number(stats.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              </div>
+              <div className="p-3 bg-rose-100 rounded-xl">
+                <DollarSign className="w-6 h-6 text-rose-600" />
               </div>
             </div>
           </div>

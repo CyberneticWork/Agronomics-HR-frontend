@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Eye,
   User,
@@ -866,7 +866,7 @@ const ShowEmployee = () => {
                       <Clock className="h-5 w-5 mr-2 text-orange-600" /> Employment Periods
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {selectedEmployee.organization_assignment.probationary_period === 1 && (
+                      {Boolean(selectedEmployee.organization_assignment.probationary_period) && (
                         <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
                           <label className="block text-sm font-medium text-yellow-800 mb-2">Probationary Period</label>
                           <p className="text-sm text-yellow-700">
@@ -877,7 +877,7 @@ const ShowEmployee = () => {
                           </p>
                         </div>
                       )}
-                      {selectedEmployee.organization_assignment.training_period === 1 && (
+                      {Boolean(selectedEmployee.organization_assignment.training_period) && (
                         <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
                           <label className="block text-sm font-medium text-blue-800 mb-2">Training Period</label>
                           <p className="text-sm text-blue-700">
@@ -888,7 +888,7 @@ const ShowEmployee = () => {
                           </p>
                         </div>
                       )}
-                      {selectedEmployee.organization_assignment.contract_period === 1 && (
+                      {Boolean(selectedEmployee.organization_assignment.contract_period) && (
                         <div className="bg-green-50 p-4 rounded-lg border border-green-200">
                           <label className="block text-sm font-medium text-green-800 mb-2">Contract Period</label>
                           <p className="text-sm text-green-700">

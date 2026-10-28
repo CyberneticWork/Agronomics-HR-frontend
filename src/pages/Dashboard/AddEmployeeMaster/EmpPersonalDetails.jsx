@@ -57,6 +57,18 @@ const Modal = ({ isOpen, onClose, title, children }) => {
   );
 };
 
+const toBool = (val, defaultValue = false) => {
+  if (val === undefined || val === null) return defaultValue;
+  if (typeof val === "boolean") return val;
+  if (typeof val === "number") return val === 1;
+  if (typeof val === "string") {
+    const s = val.trim().toLowerCase();
+    if (s === "1" || s === "true" || s === "yes" || s === "on") return true;
+    if (s === "0" || s === "false" || s === "no" || s === "off") return false;
+  }
+  return Boolean(val);
+};
+
 const handleKeyDown = (e) => {
   // Allow: backspace, delete, tab, escape, enter, arrows
   // Allow: digits (0-9), decimal point (.)
@@ -384,28 +396,53 @@ const EmpPersonalDetails = ({ onNext }) => {
           branchCode: apiData.compensation?.branch_code,
           bankAccountNo: apiData.compensation?.bank_account_no,
           comments: apiData.compensation?.comments,
-          secondaryEmp: apiData.compensation?.secondary_emp === 1,
-          primaryEmploymentBasic:
-            apiData.compensation?.primary_employment_basic === 1,
-          enableEpfEtf: apiData.compensation?.enable_epf_etf === 1,
-          otActive: apiData.compensation?.ot_active === 1,
-          otActiveSpecial: apiData.compensation?.ot_active_special === 1,
-          earlyDeduction: apiData.compensation?.early_deduction === 1,
-          incrementActive: apiData.compensation?.increment_active === 1,
-          nopayActive: apiData.compensation?.nopay_active === 1,
-          morningOt: apiData.compensation?.ot_morning === 1,
-          eveningOt: apiData.compensation?.ot_evening === 1,
-          morningOtSpecial: apiData.compensation?.ot_morning_special === 1,
-          eveningOtSpecial: apiData.compensation?.ot_evening_special === 1,
-          ot_morning_rate: apiData.compensation?.ot_morning_rate,
-          ot_night_rate: apiData.compensation?.ot_night_rate,
-          ot_morning_rate_special: apiData.compensation?.ot_morning_rate_special,
-          ot_night_rate_special: apiData.compensation?.ot_night_rate_special,
-          budgetaryReliefAllowance2015:
-            apiData.compensation?.budgetary_relief_allowance_2015 === 1,
-          budgetaryReliefAllowance2016:
-            apiData.compensation?.budgetary_relief_allowance_2016 === 1,
-          stamp: apiData.compensation?.stamp === 1,
+          secondaryEmp: toBool(apiData.compensation?.secondary_emp ?? apiData.compensation?.secondaryEmp),
+          primaryEmploymentBasic: toBool(
+            apiData.compensation?.primary_employment_basic ??
+            apiData.compensation?.primary_emp_basic ??
+            apiData.compensation?.primaryEmploymentBasic
+          ),
+          enableEpfEtf: toBool(apiData.compensation?.enable_epf_etf ?? apiData.compensation?.enableEpfEtf),
+          otActive: toBool(apiData.compensation?.ot_active ?? apiData.compensation?.otActive),
+          otActiveSpecial: toBool(apiData.compensation?.ot_active_special ?? apiData.compensation?.otActiveSpecial),
+          earlyDeduction: toBool(apiData.compensation?.early_deduction ?? apiData.compensation?.earlyDeduction),
+          incrementActive: toBool(apiData.compensation?.increment_active ?? apiData.compensation?.incrementActive),
+          nopayActive: toBool(
+            apiData.compensation?.active_nopay ??
+            apiData.compensation?.nopay_active ??
+            apiData.compensation?.nopayActive
+          ),
+          morningOt: toBool(apiData.compensation?.ot_morning ?? apiData.compensation?.morningOt),
+          eveningOt: toBool(apiData.compensation?.ot_evening ?? apiData.compensation?.eveningOt),
+          morningOtSpecial: toBool(apiData.compensation?.ot_morning_special ?? apiData.compensation?.morningOtSpecial),
+          eveningOtSpecial: toBool(apiData.compensation?.ot_evening_special ?? apiData.compensation?.eveningOtSpecial),
+          ot_morning_rate: apiData.compensation?.ot_morning_rate ?? "",
+          ot_night_rate: apiData.compensation?.ot_night_rate ?? "",
+          ot_morning_rate_special: apiData.compensation?.ot_morning_rate_special ?? "",
+          ot_night_rate_special: apiData.compensation?.ot_night_rate_special ?? "",
+          budgetaryReliefAllowance2015: toBool(
+            apiData.compensation?.br1 ??
+            apiData.compensation?.budgetary_relief_allowance_2015 ??
+            apiData.compensation?.budgetaryReliefAllowance2015
+          ),
+          budgetaryReliefAllowance2016: toBool(
+            apiData.compensation?.br2 ??
+            apiData.compensation?.budgetary_relief_allowance_2016 ??
+            apiData.compensation?.budgetaryReliefAllowance2016
+          ),
+          stamp: toBool(apiData.compensation?.stamp),
+          paye_active: toBool(
+            apiData.compensation?.paye_active ?? apiData.compensation?.payeActive,
+            false
+          ),
+          holiday_processing: toBool(
+            apiData.compensation?.holiday_processing ?? apiData.compensation?.holidayProcessing,
+            false
+          ),
+          off_day_processing: toBool(
+            apiData.compensation?.off_day_processing ?? apiData.compensation?.offDayProcessing,
+            false
+          ),
         },
         organization: {
           company: apiData.organization_assignment?.company?.id != null
@@ -441,12 +478,9 @@ const EmpPersonalDetails = ({ onNext }) => {
               ? String(apiData.organization_assignment.designation_id)
               : "",
           designationName: apiData.organization_assignment?.designation?.name,
-          probationPeriod:
-            apiData.organization_assignment?.probationary_period === 1,
-          trainingPeriod:
-            apiData.organization_assignment?.training_period === 1,
-          contractPeriod:
-            apiData.organization_assignment?.contract_period === 1,
+          probationPeriod: toBool(apiData.organization_assignment?.probationary_period),
+          trainingPeriod: toBool(apiData.organization_assignment?.training_period),
+          contractPeriod: toBool(apiData.organization_assignment?.contract_period),
           probationFrom:
             apiData.organization_assignment?.probationary_period_from,
           probationTo: apiData.organization_assignment?.probationary_period_to,
@@ -457,8 +491,7 @@ const EmpPersonalDetails = ({ onNext }) => {
           confirmationDate: apiData.organization_assignment?.confirmation_date,
           resignationDate: apiData.organization_assignment?.date_of_resigning,
           resignationLetter: null,
-          resignationApproved:
-            apiData.organization_assignment?.resignation_approved === 1,
+          resignationApproved: toBool(apiData.organization_assignment?.resignation_approved),
           currentStatus: apiData.is_active ? 1 : 0,
           dayOff: apiData.organization_assignment?.day_off || "",
           employeeCategory: normalizeEmployeeCategory(

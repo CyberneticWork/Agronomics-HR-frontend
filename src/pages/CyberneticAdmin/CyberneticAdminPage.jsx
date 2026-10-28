@@ -57,6 +57,8 @@ const OT_HOUR_OPTIONS = [
 ];
 
 const EMPLOYEE_ADDON_PACKS = [
+  ["stamp_duty_paye_holiday", "Stamp/PAYE/Holiday"],
+  ["jaysea_food_salary_process", "Jaysea Food Salary"],
   ["qualifications", "Quals"],
   ["following_qualifications", "Following"],
   ["ol_results", "O/L"],
@@ -64,6 +66,7 @@ const EMPLOYEE_ADDON_PACKS = [
   ["previous_employment", "Prev. employment"],
   ["hr_company_create", "HR adds companies"],
   ["contract_as_permanent", "Contract = permanent"],
+  ["fish_deduction", "Fish"],
 ];
 
 const packOn = (company, key) =>
@@ -117,6 +120,10 @@ const emptyForm = {
   salary_advance_percent: 50,
   salary_advance_hr_deduct_from: "bonus",
   reland_excel_import: false,
+  fish_deduction: false,
+  stamp_duty_paye_holiday: false,
+  stamp_duty_amount: 25,
+  jaysea_food_salary_process: false,
   qualifications: false,
   ol_results: false,
   al_results: false,
@@ -284,6 +291,10 @@ export default function CyberneticAdminPage() {
         company.process_config?.reland_excel_import?.enabled ??
         company.process_config?.reland_excel_import
       ),
+      fish_deduction: packOn(company, "fish_deduction"),
+      stamp_duty_paye_holiday: packOn(company, "stamp_duty_paye_holiday"),
+      stamp_duty_amount: company.process_config?.stamp_duty_paye_holiday?.stamp_duty_amount ?? company.process_config?.stamp_duty_amount ?? 25,
+      jaysea_food_salary_process: packOn(company, "jaysea_food_salary_process"),
       qualifications: !!(
         company.process_config?.qualifications?.enabled ??
         company.process_config?.qualifications
@@ -351,6 +362,12 @@ export default function CyberneticAdminPage() {
             hr_deduct_from: form.salary_advance_hr_deduct_from === "basic" ? "basic" : "bonus",
           },
           reland_excel_import: { enabled: !!form.reland_excel_import },
+          fish_deduction: { enabled: !!form.fish_deduction },
+          stamp_duty_paye_holiday: {
+            enabled: !!form.stamp_duty_paye_holiday,
+            stamp_duty_amount: form.stamp_duty_amount !== undefined && form.stamp_duty_amount !== "" ? parseFloat(form.stamp_duty_amount) : 25.0,
+          },
+          jaysea_food_salary_process: { enabled: !!form.jaysea_food_salary_process },
           qualifications: { enabled: !!form.qualifications },
           ol_results: { enabled: !!form.ol_results },
           al_results: { enabled: !!form.al_results },
@@ -1093,6 +1110,65 @@ export default function CyberneticAdminPage() {
                 <span className="font-semibold text-slate-900">Reland fingerprint Excel import</span>
                 <span className="block text-xs text-slate-600 mt-0.5">
                   Unchecked hides Reland import on Time Card. Allow HR to upload Reland Raw Clock-InOut Log.xls and write those punches as time cards for this company only.
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-white p-3 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={!!form.fish_deduction}
+                onChange={(e) => setForm({ ...form, fish_deduction: e.target.checked })}
+              />
+              <span>
+                <span className="font-semibold text-slate-900">Fish Deduction</span>
+                <span className="block text-xs text-slate-600 mt-0.5">
+                  Unchecked hides the Fish Deduction module. Enable for JC Foods Processing (Pvt) Ltd. to record fish purchases/deductions per employee and automatically deduct FISH on monthly salary slips.
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 rounded-lg border border-teal-200 bg-teal-50/50 p-3 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={!!form.stamp_duty_paye_holiday}
+                onChange={(e) => setForm({ ...form, stamp_duty_paye_holiday: e.target.checked })}
+              />
+              <span className="flex-1">
+                <span className="font-semibold text-teal-950">Stamp Duty, PAYE, No-Pay and Off-Day + Holiday Processing</span>
+                <span className="block text-xs text-teal-700 mt-0.5">
+                  Enables employee settings for Stamp Duty, PAYE/APIT tax table calculation, attendance-based Off-Day & Holiday pay (Daily Rate = Basic ÷ 30), and enhanced No-Pay deduction tracking.
+                </span>
+                {form.stamp_duty_paye_holiday && (
+                  <div className="mt-2.5 flex items-center gap-2 pt-2 border-t border-teal-200" onClick={(e) => e.stopPropagation()}>
+                    <span className="text-xs font-semibold text-teal-950">Configured Stamp Duty Deduction:</span>
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-teal-800 font-medium">Rs.</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        className="w-24 px-2 py-1 text-xs border border-teal-300 rounded bg-white text-gray-900 focus:ring-1 focus:ring-teal-500 font-medium"
+                        value={form.stamp_duty_amount ?? 25}
+                        onChange={(e) => setForm({ ...form, stamp_duty_amount: e.target.value })}
+                        placeholder="25.00"
+                      />
+                    </div>
+                  </div>
+                )}
+              </span>
+            </label>
+            <label className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={!!form.jaysea_food_salary_process}
+                onChange={(e) => setForm({ ...form, jaysea_food_salary_process: e.target.checked })}
+              />
+              <span>
+                <span className="font-semibold text-emerald-950">Jaysea Food Salary Process</span>
+                <span className="block text-xs text-emerald-700 mt-0.5">
+                  Applies the 4-step Jaysea Food salary sequence: (1) Gross = Basic + Holiday Pay + Off-Day Pay + Increment - No-Pay; (2) EPF 8%, EPF 12%, ETF 3% on Gross Salary as EPF basis; (3) Deductions (PAYE, Stamp, Advances, Fish) & Allowances; (4) Net Salary = Total Earnings - Total Deductions, formatted into the 3-column Jaysea Food salary slip.
                 </span>
               </span>
             </label>

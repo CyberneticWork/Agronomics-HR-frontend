@@ -131,6 +131,7 @@ export default function UserAclModal({ user, onClose }) {
     ["medical_leave", "Medical leave"],
     ["salary_advance", "Salary advance"],
     ["leave_workflow", "Leave covering"],
+    ["fish_deduction", "Fish deduction"],
   ];
 
   return (

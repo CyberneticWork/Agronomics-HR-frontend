@@ -160,4 +160,9 @@ const XLSX = {
   },
 };
 
+export const utils = XLSX.utils;
+export const writeFile = XLSX.writeFile;
+export const writeFileXLSX = XLSX.writeFileXLSX;
+export const read = XLSX.read;
+
 export default XLSX;

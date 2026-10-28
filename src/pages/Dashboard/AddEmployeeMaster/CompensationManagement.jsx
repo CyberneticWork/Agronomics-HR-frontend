@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   DollarSign,
   Calendar,
@@ -10,9 +10,11 @@ import {
   ChevronUp,
 } from "lucide-react";
 import { useEmployeeForm } from "@contexts/EmployeeFormContext";
+import { useAuth } from "@contexts/AuthContext";
 import FieldError from "@components/ErrorMessage/FieldError";
 import { banks } from "@utils/banks";
 import { calculateCompensationSummary } from "@utils/compensationCalculations";
+import { fetchCompanies } from "@services/ApiDataService";
 
 // Utility: safely parse a numeric string to Number, treating empty/invalid as 0.
 const toNumber = (val) => {
@@ -57,9 +59,50 @@ const handleKeyDown = (e) => {
   e.preventDefault();
 };
 
-const CompensationManagement = ({ onNext, onPrevious }) => {
+const CompensationManagement = ({ onNext, onPrevious, selectedCompany, companies: propCompanies }) => {
+  const { user } = useAuth();
   const { formData, updateFormData, errors, clearFieldError } =
     useEmployeeForm();
+
+  const [internalCompanies, setInternalCompanies] = useState([]);
+
+  useEffect(() => {
+    if (!selectedCompany && (!propCompanies || !propCompanies.length)) {
+      fetchCompanies()
+        .then((rows) => setInternalCompanies(Array.isArray(rows) ? rows : []))
+        .catch(() => setInternalCompanies([]));
+    }
+  }, [selectedCompany, propCompanies]);
+
+  const activeCompany = useMemo(() => {
+    if (selectedCompany) return selectedCompany;
+    const list = (propCompanies?.length ? propCompanies : internalCompanies) || [];
+    if (!list.length) return null;
+    const compId = formData.organization?.company;
+    if (compId) {
+      const match = list.find((c) => String(c.id) === String(compId));
+      if (match) return match;
+    }
+    if (user?.company_id) {
+      const match = list.find((c) => Number(c.id) === Number(user.company_id));
+      if (match) return match;
+    }
+    return list.find((c) => c.portal_active) || list[0] || null;
+  }, [selectedCompany, propCompanies, internalCompanies, formData.organization?.company, user?.company_id]);
+
+  const isStampPayeHolidayOn = useMemo(() => {
+    if (!activeCompany) return false;
+    let cfg = activeCompany.process_config;
+    if (typeof cfg === "string") {
+      try {
+        cfg = JSON.parse(cfg);
+      } catch {
+        cfg = {};
+      }
+    }
+    const val = cfg?.stamp_duty_paye_holiday;
+    return !!(val?.enabled ?? val === true);
+  }, [activeCompany]);
 
   const [openSections, setOpenSections] = useState({
     salary: true,
@@ -414,30 +457,122 @@ const CompensationManagement = ({ onNext, onPrevious }) => {
                         </div>
                       </div>
 
-                      {/* <div className="flex items-center justify-between p-3 bg-white rounded-lg border">
-                        <label
-                          htmlFor="Stamp"
-                          className="text-sm font-medium text-gray-700"
-                        >
-                          Stamp
-                        </label>
-                        <div
-                          className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer"
-                          style={{
-                            backgroundColor: formData.compensation.stamp
-                              ? "#3b82f6"
-                              : "#e5e7eb",
-                          }}
-                          onClick={() => handleToggleChange("stamp")}
-                        >
-                          <span
-                            className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${formData.compensation.stamp
-                              ? "translate-x-6"
-                              : "translate-x-1"
-                              }`}
-                          />
-                        </div>
-                      </div> */}
+                      {isStampPayeHolidayOn && (
+                        <>
+                          <div className="flex items-center justify-between p-3 bg-white rounded-lg border">
+                            <label
+                              htmlFor="stamp"
+                              className="text-sm font-medium text-gray-700"
+                            >
+                              Stamp Duty
+                            </label>
+                            <div
+                              id="stamp"
+                              className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer"
+                              style={{
+                                backgroundColor: formData.compensation.stamp
+                                  ? "#3b82f6"
+                                  : "#e5e7eb",
+                              }}
+                              onClick={() => handleToggleChange("stamp")}
+                            >
+                              <span
+                                className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${formData.compensation.stamp
+                                  ? "translate-x-6"
+                                  : "translate-x-1"
+                                  }`}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between p-3 bg-white rounded-lg border">
+                            <label
+                              htmlFor="paye_active"
+                              className="text-sm font-medium text-gray-700"
+                            >
+                              PAYE / APIT
+                            </label>
+                            <div
+                              id="paye_active"
+                              className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer"
+                              style={{
+                                backgroundColor: (formData.compensation.paye_active || formData.compensation.payeActive)
+                                  ? "#3b82f6"
+                                  : "#e5e7eb",
+                              }}
+                              onClick={() => {
+                                const val = !(formData.compensation.paye_active || formData.compensation.payeActive);
+                                updateFormData("compensation", { paye_active: val, payeActive: val });
+                              }}
+                            >
+                              <span
+                                className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${(formData.compensation.paye_active || formData.compensation.payeActive)
+                                  ? "translate-x-6"
+                                  : "translate-x-1"
+                                  }`}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between p-3 bg-white rounded-lg border">
+                            <label
+                              htmlFor="holiday_processing"
+                              className="text-sm font-medium text-gray-700"
+                            >
+                              Holiday Processing
+                            </label>
+                            <div
+                              id="holiday_processing"
+                              className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer"
+                              style={{
+                                backgroundColor: (formData.compensation.holiday_processing || formData.compensation.holidayProcessing)
+                                  ? "#3b82f6"
+                                  : "#e5e7eb",
+                              }}
+                              onClick={() => {
+                                const val = !(formData.compensation.holiday_processing || formData.compensation.holidayProcessing);
+                                updateFormData("compensation", { holiday_processing: val, holidayProcessing: val });
+                              }}
+                            >
+                              <span
+                                className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${(formData.compensation.holiday_processing || formData.compensation.holidayProcessing)
+                                  ? "translate-x-6"
+                                  : "translate-x-1"
+                                  }`}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between p-3 bg-white rounded-lg border">
+                            <label
+                              htmlFor="off_day_processing"
+                              className="text-sm font-medium text-gray-700"
+                            >
+                              Off-Day Processing
+                            </label>
+                            <div
+                              id="off_day_processing"
+                              className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer"
+                              style={{
+                                backgroundColor: (formData.compensation.off_day_processing || formData.compensation.offDayProcessing)
+                                  ? "#3b82f6"
+                                  : "#e5e7eb",
+                              }}
+                              onClick={() => {
+                                const val = !(formData.compensation.off_day_processing || formData.compensation.offDayProcessing);
+                                updateFormData("compensation", { off_day_processing: val, offDayProcessing: val });
+                              }}
+                            >
+                              <span
+                                className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${(formData.compensation.off_day_processing || formData.compensation.offDayProcessing)
+                                  ? "translate-x-6"
+                                  : "translate-x-1"
+                                  }`}
+                              />
+                            </div>
+                          </div>
+                        </>
+                      )}
 
                       <div className="flex items-center justify-between p-3 bg-white rounded-lg border">
                         <label

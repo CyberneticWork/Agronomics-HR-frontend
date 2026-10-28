@@ -11,6 +11,7 @@ import {
   EmployeeFormProvider,
   useEmployeeForm,
 } from "@contexts/EmployeeFormContext";
+import { useAuth } from "@contexts/AuthContext";
 import employeeService from "@services/EmployeeDataService";
 import { fetchCompanies } from "@services/ApiDataService";
 import Swal from "sweetalert2";
@@ -27,8 +28,19 @@ const baseSteps = [
 
 const STEP_LABELS = { previousEmployment: "Previous Employment" };
 
-const packOn = (company, key) =>
-  !!(company?.process_config?.[key]?.enabled ?? company?.process_config?.[key] === true);
+const packOn = (company, key) => {
+  if (!company) return false;
+  let cfg = company.process_config;
+  if (typeof cfg === "string") {
+    try {
+      cfg = JSON.parse(cfg);
+    } catch {
+      cfg = {};
+    }
+  }
+  const val = cfg?.[key];
+  return !!(val?.enabled ?? val === true);
+};
 
 const EmployeeMasterWrapper = () => {
   return (
@@ -39,8 +51,9 @@ const EmployeeMasterWrapper = () => {
 };
 
 const EmployeeMaster = () => {
+  const { user } = useAuth();
   const [activeCategory, setActiveCategory] = useState("personal");
-  const { formData, setFormErrors, setIsSubmitting, clearForm, loadEmployeeData } =
+  const { formData, updateFormData, setFormErrors, setIsSubmitting, clearForm, loadEmployeeData } =
     useEmployeeForm();
   const excelInputRef = useRef(null);
   const [importing, setImporting] = useState(false);
@@ -53,9 +66,35 @@ const EmployeeMaster = () => {
   }, []);
 
   const selectedCompanyId = formData.organization?.company;
-  const selectedCompany = companies.find(
-    (c) => selectedCompanyId && String(c.id) === String(selectedCompanyId)
-  );
+  const selectedCompany = useMemo(() => {
+    if (!companies.length) return null;
+    if (selectedCompanyId) {
+      const match = companies.find((c) => String(c.id) === String(selectedCompanyId));
+      if (match) return match;
+    }
+    if (user?.company_id) {
+      const match = companies.find((c) => Number(c.id) === Number(user.company_id));
+      if (match) return match;
+    }
+    return companies.find((c) => c.portal_active) || companies[0] || null;
+  }, [companies, selectedCompanyId, user?.company_id]);
+
+  useEffect(() => {
+    if (companies.length && !formData.organization?.company) {
+      const preferred =
+        (user?.company_id && companies.find((c) => Number(c.id) === Number(user.company_id))) ||
+        companies.find((c) => c.portal_active) ||
+        companies[0];
+      if (preferred) {
+        updateFormData("organization", {
+          company: String(preferred.id),
+          companyCode: preferred.company_code || "",
+          companyName: preferred.name || "",
+        });
+      }
+    }
+  }, [companies, formData.organization?.company, user?.company_id, updateFormData]);
+
   const educationPacks = {
     qualifications: packOn(selectedCompany, "qualifications"),
     following: packOn(selectedCompany, "following_qualifications"),
@@ -304,6 +343,8 @@ const EmployeeMaster = () => {
               onNext={goNext}
               onPrevious={goPrevious}
               activeCategory={activeCategory}
+              selectedCompany={selectedCompany}
+              companies={companies}
             />
           )}
           {activeCategory === "organization" && (

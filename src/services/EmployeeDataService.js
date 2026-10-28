@@ -182,6 +182,10 @@ const employeeService = {
     }
   },
 
+  async getEmployees() {
+    return this.fetchEmployees();
+  },
+
   async fetchEmployeesForTable(page = 1, perPage = 10, search = "") {
     try {
       const response = await axios.get(
