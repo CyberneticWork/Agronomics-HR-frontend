@@ -81,11 +81,23 @@ export default function ZktecoDevicePanel({ companies = [] }) {
     }
   };
 
-  const showLogs = async (id) => {
+  const showLogs = async (device) => {
+    const id = device?.id ?? device;
     try {
       const logs = await zktecoService.getEventLogs(id, 30);
       if (!logs.length) {
-        Swal.fire({ icon: "info", title: "No events yet", text: "Wait for the device handshake, then scan a finger." });
+        Swal.fire({
+          icon: "info",
+          title: "No punches imported yet",
+          width: 560,
+          html: `<div class="text-left text-sm space-y-2">
+                <p><b>Recent punches</b> only lists rows already saved in HR — it does not read the K40 memory by itself.</p>
+                <p>On the K40 Pro go to <b>Comm. → Cloud Server / ADMS</b> and set:</p>
+                <code class="block break-all bg-slate-100 p-2 rounded text-xs">${device.adms_url || ""}</code>
+                <p>Then reboot the device. When <b>Last handshake</b> updates, scan a finger once. Old terminal logs upload after ADMS connects (or re-scan).</p>
+                <p class="text-xs text-slate-500">Device IP ${device.ip_address || "—"} must reach this HR server (not 127.0.0.1).</p>
+              </div>`,
+        });
         return;
       }
       Swal.fire({
@@ -139,9 +151,9 @@ export default function ZktecoDevicePanel({ companies = [] }) {
       {expanded && (
         <div className="p-4 space-y-4">
           <p className="text-sm text-slate-600">
-            The K40 Pro pushes punches over <b>ADMS / Cloud Server</b> to HR, then Time Card is written the same way as
-            Hikvision (IN/OUT toggle). Device <b>User ID</b> must match <strong>Attendance Employee No</strong>. Serial
-            Number (SN) must match the terminal exactly.
+            The K40 Pro pushes punches over <b>ADMS / Cloud Server</b> to HR (set the ADMS URL on the card — not
+            127.0.0.1). <b>Recent punches</b> shows only imported HR logs. Device <b>User ID</b> must match{" "}
+            <strong>Attendance Employee No</strong>. Serial Number (SN) must match the terminal exactly.
           </p>
 
           <div className="flex flex-wrap gap-2">
@@ -282,7 +294,7 @@ export default function ZktecoDevicePanel({ companies = [] }) {
                 >
                   Copy ADMS URL
                 </button>
-                <button type="button" className="px-2 py-1 text-xs rounded bg-slate-100" onClick={() => showLogs(d.id)}>
+                <button type="button" className="px-2 py-1 text-xs rounded bg-slate-100" onClick={() => showLogs(d)}>
                   Recent punches
                 </button>
                 <button
