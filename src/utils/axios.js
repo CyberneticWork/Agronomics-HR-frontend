@@ -150,7 +150,8 @@ function urlIsEmployeeWrite(err) {
   const path = `${url} ${lr}`;
   const isEmployees =
     path.includes("/employees") ||
-    path.includes("/employes");
+    path.includes("/employes") ||
+    path.includes("/employee-leave-balances");
   return isEmployees && (method === "post" || method === "put" || method === "patch");
 }
 
