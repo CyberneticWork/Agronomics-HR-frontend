@@ -44,6 +44,11 @@ const Sidebar = ({
   const navigate = useNavigate();
   const [companyLogo, setCompanyLogo] = useState(branding?.logo_url || "");
   const [companyName, setCompanyName] = useState(branding?.name || "");
+  const [activeCompany, setActiveCompany] = useState(null);
+
+  const packOn = (comp, key) =>
+    !!(comp?.process_config?.[key]?.enabled ?? comp?.process_config?.[key] === true);
+  const spmReportsEnabled = packOn(activeCompany, "spm_reports") || packOn(branding, "spm_reports");
   const showOwnPayLeave = canUseHrDesk(user) && canUseEmployeePortal(user);
 
   useEffect(() => {
@@ -64,6 +69,7 @@ const Sidebar = ({
         list[0];
       if (cancelled || !active) return;
       setCurrentCompany(active);
+      setActiveCompany(active);
       if (active.logo_url) setCompanyLogo(active.logo_url);
       if (active.name) setCompanyName(active.name);
     })();
@@ -182,11 +188,15 @@ const Sidebar = ({
               { id: "attendanceReport", name: "Attendance Report" },
               { id: "singleEntryReport", name: "Single Entry Report" },
               { id: "absentReport", name: "Absent Report" },
-              { id: "shiftHoursReport", name: "Shift Hours Reports" },
+              ...(spmReportsEnabled ? [
+                { id: "shiftHoursReport", name: "Shift Hours Reports" },
+              ] : []),
               { id: "contractAttendanceReport", name: "Contract Time Attendance" },
-              { id: "dailyOtHoursReport", name: "Daily OT Hours" },
-              { id: "monthlyWorkingHoursReport", name: "Monthly Working Hours" },
-              { id: "monthlyOtHoursReport", name: "Monthly OT Hours" },
+              ...(spmReportsEnabled ? [
+                { id: "dailyOtHoursReport", name: "Daily OT Hours" },
+                { id: "monthlyWorkingHoursReport", name: "Monthly Working Hours" },
+                { id: "monthlyOtHoursReport", name: "Monthly OT Hours" },
+              ] : []),
               { id: "timeCardAuditReport", name: "Time Card Audit Report" },
               { id: "deletedTimeCardReport", name: "Deleted Time Card Report" },
             ],
@@ -212,7 +222,7 @@ const Sidebar = ({
         ],
       },
     ];
-  }, [user?.role]);
+  }, [user?.role, spmReportsEnabled]);
 
   // Active Item එක අනුව මෙනු එක ස්වයංක්‍රීයව විවෘත කිරීම (Auto-expand)
   useEffect(() => {

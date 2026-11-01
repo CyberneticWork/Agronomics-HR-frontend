@@ -119,6 +119,7 @@ const emptyForm = {
   salary_advance: false,
   salary_advance_percent: 50,
   salary_advance_hr_deduct_from: "bonus",
+  spm_reports: false,
   reland_excel_import: false,
   fish_deduction: false,
   stamp_duty_paye_holiday: false,
@@ -287,6 +288,7 @@ export default function CyberneticAdminPage() {
         company.process_config?.salary_advance?.enabled ??
         company.process_config?.salary_advance
       ),
+      spm_reports: packOn(company, "spm_reports"),
       reland_excel_import: !!(
         company.process_config?.reland_excel_import?.enabled ??
         company.process_config?.reland_excel_import
@@ -361,6 +363,7 @@ export default function CyberneticAdminPage() {
             percent: Number(form.salary_advance_percent || 50),
             hr_deduct_from: form.salary_advance_hr_deduct_from === "basic" ? "basic" : "bonus",
           },
+          spm_reports: { enabled: !!form.spm_reports },
           reland_excel_import: { enabled: !!form.reland_excel_import },
           fish_deduction: { enabled: !!form.fish_deduction },
           stamp_duty_paye_holiday: {
@@ -586,6 +589,7 @@ export default function CyberneticAdminPage() {
                   <th className="py-2 pr-3">Leave</th>
                   <th className="py-2 pr-3">Phone punch</th>
                   <th className="py-2 pr-3">Reland Excel</th>
+                  <th className="py-2 pr-3">SPM Reports</th>
                   <th className="py-2 pr-3">Employee add-ons</th>
                   <th className="py-2"> </th>
                 </tr>
@@ -677,6 +681,13 @@ export default function CyberneticAdminPage() {
                     <td className="py-3 pr-3 text-xs">
                       {company.process_config?.reland_excel_import?.enabled || company.process_config?.reland_excel_import === true ? (
                         <span className="rounded-full bg-sky-50 px-2 py-0.5 font-semibold text-sky-900">On</span>
+                      ) : (
+                        <span className="text-slate-400">Off</span>
+                      )}
+                    </td>
+                    <td className="py-3 pr-3 text-xs">
+                      {packOn(company, "spm_reports") ? (
+                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-800">On</span>
                       ) : (
                         <span className="text-slate-400">Off</span>
                       )}
@@ -1169,6 +1180,20 @@ export default function CyberneticAdminPage() {
                 <span className="font-semibold text-emerald-950">Jaysea Food Salary Process</span>
                 <span className="block text-xs text-emerald-700 mt-0.5">
                   Applies the 4-step Jaysea Food salary sequence: (1) Gross = Basic + Holiday Pay + Off-Day Pay + Increment - No-Pay; (2) EPF 8%, EPF 12%, ETF 3% on Gross Salary as EPF basis; (3) Deductions (PAYE, Stamp, Advances, Fish) & Allowances; (4) Net Salary = Total Earnings - Total Deductions, formatted into the 3-column Jaysea Food salary slip.
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-white p-3 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={!!form.spm_reports}
+                onChange={(e) => setForm({ ...form, spm_reports: e.target.checked })}
+              />
+              <span>
+                <span className="font-semibold text-slate-900">SPM REPORTS</span>
+                <span className="block text-xs text-slate-600 mt-0.5">
+                  Enable updated SPM reports (Schedule 3: Salary Advance without total column, Shift Hours, Daily OT, Monthly Hours) and SPM formatting. Unchecked hides related reports and reverts to default report behavior.
                 </span>
               </span>
             </label>

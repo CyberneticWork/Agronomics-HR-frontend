@@ -10,9 +10,29 @@ const weekdayLetter = (isoDate) => {
   return letters[new Date(`${isoDate}T00:00:00`).getDay()];
 };
 
-const cellValue = (value) => {
-  if (value == null || value === "" || Number(value) === 0) return "";
-  return Number(value).toFixed(2);
+const formatHHMM = (value, zeroDefault = "") => {
+  if (value == null || value === "" || value === false) return zeroDefault;
+  if (typeof value === "string" && value.includes(":")) {
+    const parts = value.trim().split(":");
+    if (parts.length >= 2) {
+      const h = parseInt(parts[0], 10) || 0;
+      const m = parseInt(parts[1], 10) || 0;
+      if (h === 0 && m === 0 && zeroDefault !== "00:00") return zeroDefault;
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    }
+    return value;
+  }
+  const num = Number(value);
+  if (Number.isNaN(num) || num <= 0) return zeroDefault;
+  const hours = Math.floor(num);
+  const frac = Math.round((num - hours) * 100);
+  let mins = (frac === 15 || frac === 30 || frac === 45) ? frac : Math.round((num - hours) * 60);
+  let finalHours = hours;
+  if (mins >= 60) {
+    finalHours += Math.floor(mins / 60);
+    mins = mins % 60;
+  }
+  return `${String(finalHours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
 };
 
 const MonthlyHoursReport = ({ reportType = "working" }) => {
@@ -81,8 +101,8 @@ const MonthlyHoursReport = ({ reportType = "working" }) => {
 
   const title = isOt ? "Monthly OT Hours Report" : "Monthly Working Hours Report";
   const subtitle = isOt
-    ? "Company employees down the page, each day of the month across — OT hours."
-    : "Company employees down the page, each day of the month across — working hours.";
+    ? "Company employees down the page, each day of the month across — OT hours (HH:MM)."
+    : "Company employees down the page, each day of the month across — working hours (HH:MM).";
 
   const exportExcel = () => {
     if (!rows.length) {
@@ -98,16 +118,16 @@ const MonthlyHoursReport = ({ reportType = "working" }) => {
       };
       dates.forEach((iso) => {
         const day = iso.slice(-2);
-        line[day] = cellValue(r.days?.[iso]);
+        line[day] = formatHHMM(r.days?.[iso], "");
       });
-      line.Total = r.total ? Number(r.total).toFixed(2) : "";
+      line["Total (HH:MM)"] = formatHHMM(r.total, "00:00");
       return line;
     });
     const totalLine = { "Emp No": "", Name: "TOTAL", Company: "", Department: "" };
     dates.forEach((iso) => {
-      totalLine[iso.slice(-2)] = cellValue(dayTotals[iso]);
+      totalLine[iso.slice(-2)] = formatHHMM(dayTotals[iso], "00:00");
     });
-    totalLine.Total = grandTotal ? Number(grandTotal).toFixed(2) : "";
+    totalLine["Total (HH:MM)"] = formatHHMM(grandTotal, "00:00");
     sheetRows.push(totalLine);
 
     const ws = XLSX.utils.json_to_sheet(sheetRows);
@@ -194,7 +214,7 @@ const MonthlyHoursReport = ({ reportType = "working" }) => {
                   <div className="text-[10px] font-normal text-slate-300">{weekdayLetter(iso)}</div>
                 </th>
               ))}
-              <th className="p-2 text-center min-w-[56px] bg-slate-900">Total</th>
+              <th className="p-2 text-center min-w-[56px] bg-slate-900">Total (HH:MM)</th>
             </tr>
           </thead>
           <tbody>
@@ -216,11 +236,11 @@ const MonthlyHoursReport = ({ reportType = "working" }) => {
                   <td className="p-2 whitespace-nowrap">{r.company_code || r.company}</td>
                   {dates.map((iso) => (
                     <td key={iso} className="p-1 text-center tabular-nums">
-                      {cellValue(r.days?.[iso])}
+                      {formatHHMM(r.days?.[iso], "")}
                     </td>
                   ))}
                   <td className="p-2 text-center font-semibold bg-slate-50 tabular-nums">
-                    {cellValue(r.total)}
+                    {formatHHMM(r.total, "00:00")}
                   </td>
                 </tr>
               ))
@@ -232,9 +252,9 @@ const MonthlyHoursReport = ({ reportType = "working" }) => {
                 <td className="p-2 sticky left-0 bg-slate-100 z-10" colSpan={2}>Total</td>
                 <td className="p-2" />
                 {dates.map((iso) => (
-                  <td key={iso} className="p-1 text-center tabular-nums">{cellValue(dayTotals[iso])}</td>
+                  <td key={iso} className="p-1 text-center tabular-nums">{formatHHMM(dayTotals[iso], "00:00")}</td>
                 ))}
-                <td className="p-2 text-center tabular-nums">{cellValue(grandTotal)}</td>
+                <td className="p-2 text-center tabular-nums">{formatHHMM(grandTotal, "00:00")}</td>
               </tr>
             </tfoot>
           )}

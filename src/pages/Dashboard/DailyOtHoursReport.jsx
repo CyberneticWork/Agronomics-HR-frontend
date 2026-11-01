@@ -8,10 +8,29 @@ import DatePickerInput from "@components/DatePickerInput";
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
-const hoursCell = (value) => {
-  const n = Number(value || 0);
-  if (!n) return "";
-  return n.toFixed(2);
+const formatHHMM = (value, zeroDefault = "") => {
+  if (value == null || value === "" || value === false) return zeroDefault;
+  if (typeof value === "string" && value.includes(":")) {
+    const parts = value.trim().split(":");
+    if (parts.length >= 2) {
+      const h = parseInt(parts[0], 10) || 0;
+      const m = parseInt(parts[1], 10) || 0;
+      if (h === 0 && m === 0 && zeroDefault !== "00:00") return zeroDefault;
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    }
+    return value;
+  }
+  const num = Number(value);
+  if (Number.isNaN(num) || num <= 0) return zeroDefault;
+  const hours = Math.floor(num);
+  const frac = Math.round((num - hours) * 100);
+  let mins = (frac === 15 || frac === 30 || frac === 45) ? frac : Math.round((num - hours) * 60);
+  let finalHours = hours;
+  if (mins >= 60) {
+    finalHours += Math.floor(mins / 60);
+    mins = mins % 60;
+  }
+  return `${String(finalHours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
 };
 
 const DailyOtHoursReport = () => {
@@ -80,10 +99,10 @@ const DailyOtHoursReport = () => {
       Shift: r.shift || "",
       IN: r.in_time || "",
       OUT: r.out_time || "",
-      "Morning OT": hoursCell(r.morning_ot),
-      "Evening OT": hoursCell(r.evening_ot),
-      "Holiday OT": hoursCell(r.holiday_ot_hours),
-      "OT Hours": hoursCell(r.ot_hours),
+      "Morning OT (HH:MM)": formatHHMM(r.morning_ot, "00:00"),
+      "Evening OT (HH:MM)": formatHHMM(r.evening_ot, "00:00"),
+      "Holiday OT (HH:MM)": formatHHMM(r.holiday_ot_hours, "00:00"),
+      "OT Hours (HH:MM)": formatHHMM(r.ot_hours, "00:00"),
       Status: r.status || "",
     }));
     sheetRows.push({
@@ -95,10 +114,10 @@ const DailyOtHoursReport = () => {
       Shift: "",
       IN: "",
       OUT: "",
-      "Morning OT": hoursCell(totals?.morning_ot),
-      "Evening OT": hoursCell(totals?.evening_ot),
-      "Holiday OT": hoursCell(totals?.holiday_ot_hours),
-      "OT Hours": hoursCell(totals?.ot_hours),
+      "Morning OT (HH:MM)": formatHHMM(totals?.morning_ot, "00:00"),
+      "Evening OT (HH:MM)": formatHHMM(totals?.evening_ot, "00:00"),
+      "Holiday OT (HH:MM)": formatHHMM(totals?.holiday_ot_hours, "00:00"),
+      "OT Hours (HH:MM)": formatHHMM(totals?.ot_hours, "00:00"),
       Status: `${totals?.records || 0} records`,
     });
     const ws = XLSX.utils.json_to_sheet(sheetRows);
@@ -114,7 +133,7 @@ const DailyOtHoursReport = () => {
           <Clock3 className="w-6 h-6 text-indigo-600" /> Daily OT Hours Report
         </h1>
         <p className="text-gray-600 text-sm">
-          OT hours by employee and day (morning, evening, holiday, and total). Hours follow the company OT banding (for example 0.30, 0.45, 1.15).
+          OT hours by employee and day (morning, evening, holiday, and total) shown in HH:MM format.
         </p>
       </div>
 
@@ -171,20 +190,20 @@ const DailyOtHoursReport = () => {
       {totals && (
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
           <div className="bg-white border rounded-xl p-4">
-            <p className="text-xs text-gray-500">Morning OT</p>
-            <p className="text-xl font-bold text-sky-700 font-mono">{hoursCell(totals.morning_ot) || "0.00"}</p>
+            <p className="text-xs text-gray-500">Morning OT (HH:MM)</p>
+            <p className="text-xl font-bold text-sky-700 font-mono">{formatHHMM(totals.morning_ot, "00:00")}</p>
           </div>
           <div className="bg-white border rounded-xl p-4">
-            <p className="text-xs text-gray-500">Evening OT</p>
-            <p className="text-xl font-bold text-indigo-700 font-mono">{hoursCell(totals.evening_ot) || "0.00"}</p>
+            <p className="text-xs text-gray-500">Evening OT (HH:MM)</p>
+            <p className="text-xl font-bold text-indigo-700 font-mono">{formatHHMM(totals.evening_ot, "00:00")}</p>
           </div>
           <div className="bg-white border rounded-xl p-4">
-            <p className="text-xs text-gray-500">Holiday OT</p>
-            <p className="text-xl font-bold text-amber-700 font-mono">{hoursCell(totals.holiday_ot_hours) || "0.00"}</p>
+            <p className="text-xs text-gray-500">Holiday OT (HH:MM)</p>
+            <p className="text-xl font-bold text-amber-700 font-mono">{formatHHMM(totals.holiday_ot_hours, "00:00")}</p>
           </div>
           <div className="bg-white border rounded-xl p-4">
-            <p className="text-xs text-gray-500">Total OT hours</p>
-            <p className="text-xl font-bold text-emerald-700 font-mono">{hoursCell(totals.ot_hours) || "0.00"}</p>
+            <p className="text-xs text-gray-500">Total OT Hours (HH:MM)</p>
+            <p className="text-xl font-bold text-emerald-700 font-mono">{formatHHMM(totals.ot_hours, "00:00")}</p>
           </div>
           <div className="bg-white border rounded-xl p-4">
             <p className="text-xs text-gray-500">Records</p>
@@ -206,10 +225,10 @@ const DailyOtHoursReport = () => {
                 <th className="p-3 text-left">Date</th>
                 <th className="p-3 text-left">IN</th>
                 <th className="p-3 text-left">OUT</th>
-                <th className="p-3 text-right">Morning OT</th>
-                <th className="p-3 text-right">Evening OT</th>
-                <th className="p-3 text-right">Holiday OT</th>
-                <th className="p-3 text-right">OT Hours</th>
+                <th className="p-3 text-right">Morning OT (HH:MM)</th>
+                <th className="p-3 text-right">Evening OT (HH:MM)</th>
+                <th className="p-3 text-right">Holiday OT (HH:MM)</th>
+                <th className="p-3 text-right">OT Hours (HH:MM)</th>
                 <th className="p-3 text-left">Status</th>
               </tr>
             </thead>
@@ -223,10 +242,10 @@ const DailyOtHoursReport = () => {
                     <td className="p-3 whitespace-nowrap">{r.date}</td>
                     <td className="p-3 font-mono text-emerald-800">{r.in_time || "—"}</td>
                     <td className="p-3 font-mono text-rose-800">{r.out_time || "—"}</td>
-                    <td className="p-3 text-right font-mono">{hoursCell(r.morning_ot) || "—"}</td>
-                    <td className="p-3 text-right font-mono">{hoursCell(r.evening_ot) || "—"}</td>
-                    <td className="p-3 text-right font-mono">{hoursCell(r.holiday_ot_hours) || "—"}</td>
-                    <td className="p-3 text-right font-mono font-bold text-indigo-800">{hoursCell(r.ot_hours)}</td>
+                    <td className="p-3 text-right font-mono">{formatHHMM(r.morning_ot, "—")}</td>
+                    <td className="p-3 text-right font-mono">{formatHHMM(r.evening_ot, "—")}</td>
+                    <td className="p-3 text-right font-mono">{formatHHMM(r.holiday_ot_hours, "—")}</td>
+                    <td className="p-3 text-right font-mono font-bold text-indigo-800">{formatHHMM(r.ot_hours, "00:00")}</td>
                     <td className="p-3 capitalize">{r.status || "—"}</td>
                   </tr>
                 ))

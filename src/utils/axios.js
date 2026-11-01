@@ -99,7 +99,7 @@ axios.interceptors.response.use(
       } else if (status >= 500) {
         // Keep backend error text for employee save so HR sees the real cause
         // (unique login, missing fields, etc.) instead of a generic wipe.
-        if (urlIsEmployeeWrite(err)) {
+        if (urlIsEmployeeWrite(err) || onCyberneticAdminPage()) {
           const next = {
             message:
               err.response.data.error ||

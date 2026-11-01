@@ -1,16 +1,32 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { 
   FileSpreadsheet, Building2, Download, Eye,
   FileText, FileBarChart, Loader2, FileCheck, Wallet, CreditCard, Scissors, Gift, Clock, Banknote, X
 } from "lucide-react";
 import Swal from "sweetalert2";
 import ReportService from "../../services/ReportService";
+import { useBranding } from "../../contexts/BrandingContext";
+import { fetchCompanies } from "@services/ApiDataService";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
 const NOTES_ARRAY = [5000, 1000, 500, 100, 50, 20, 10, 5, 2, 1];
 
 const Reports = () => {
+  const { branding } = useBranding();
+  const [selectedCompany, setSelectedCompany] = useState("");
+  const [companies, setCompanies] = useState([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const c = await fetchCompanies();
+        setCompanies(Array.isArray(c) ? c : c?.data || []);
+      } catch (e) {
+        console.error("Error loading companies:", e);
+      }
+    })();
+  }, []);
   const [selectedMonth, setSelectedMonth] = useState(String(new Date().getMonth() + 1).padStart(2, "0"));
   const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
   const [reportData, setReportData] = useState([]);
@@ -32,13 +48,24 @@ const Reports = () => {
     { value: "11", label: "November" }, { value: "12", label: "December" },
   ];
   const years = Array.from({ length: 5 }, (_, i) => String(new Date().getFullYear() - i));
+  const monthLabel = months.find(m => m.value === selectedMonth)?.label || selectedMonth;
+
+  const selectedCompObj = selectedCompany
+    ? companies.find((c) => String(c.id) === String(selectedCompany))
+    : null;
+  const activeCompObj = selectedCompObj || companies.find((c) => c.portal_active) || companies[0] || branding;
+  const getSpmStatus = (obj) => {
+    if (!obj || !obj.process_config) return null;
+    return !!(obj.process_config?.spm_reports?.enabled ?? obj.process_config?.spm_reports === true);
+  };
+  const spmReportsEnabled = getSpmStatus(activeCompObj) ?? getSpmStatus(branding) ?? false;
 
   const handleFetchData = async () => {
     try {
       setIsLoading(true);
       const [data, scheduleData] = await Promise.all([
-        ReportService.getMonthlyReportData(selectedMonth, selectedYear),
-        ReportService.getScheduleReportData(selectedMonth, selectedYear),
+        ReportService.getMonthlyReportData(selectedMonth, selectedYear, selectedCompany),
+        ReportService.getScheduleReportData(selectedMonth, selectedYear, selectedCompany),
       ]);
       setReportData(data);
       setScheduleReportData(scheduleData);
@@ -168,19 +195,74 @@ const Reports = () => {
   const generateDynamicDeductionsData = () => {
     const uniqueNames = new Set();
     reportData.forEach(e => { (e.raw_deductions || []).forEach(d => uniqueNames.add(d.name)); });
-    const dynamicHeaders = Array.from(uniqueNames);
-    let rows = []; let columnTotals = new Array(dynamicHeaders.length).fill(0); let tTotal = 0;
+    let dynamicHeaders = Array.from(uniqueNames);
+
+    if (spmReportsEnabled) {
+      if (dynamicHeaders.length === 0) {
+        const hasAdvance = reportData.some(e => Number(e.salary_advance || 0) > 0);
+        if (hasAdvance || dynamicHeaders.length === 0) {
+          dynamicHeaders = ["Salary Advance"];
+        }
+      } else if (!dynamicHeaders.includes("Salary Advance") && reportData.some(e => Number(e.salary_advance || 0) > 0)) {
+        dynamicHeaders.unshift("Salary Advance");
+      }
+    }
+
+    let rows = []; 
+    let columnTotals = new Array(dynamicHeaders.length).fill(0); 
+    let tTotal = 0;
+
     reportData.forEach(e => {
-      let row = [e.emp_no, e.name]; let empTotalDeds = 0;
+      let row = [e.emp_no, e.name]; 
+      let empTotalDeds = 0;
       dynamicHeaders.forEach((headerName, index) => {
+        let amount = 0;
         let item = (e.raw_deductions || []).find(d => d.name === headerName);
-        let amount = item ? parseFloat(item.amount) : 0;
-        row.push(amount.toFixed(2)); columnTotals[index] += amount; empTotalDeds += amount;
+        if (item) {
+          amount = parseFloat(item.amount) || 0;
+        } else if (headerName === "Salary Advance") {
+          amount = parseFloat(e.salary_advance) || 0;
+        }
+        row.push(amount.toFixed(2)); 
+        columnTotals[index] += amount; 
+        empTotalDeds += amount;
       });
-      if (empTotalDeds > 0) { row.push(empTotalDeds.toFixed(2)); rows.push(row); tTotal += empTotalDeds; }
+      if (empTotalDeds > 0) { 
+        if (!spmReportsEnabled) {
+          row.push(empTotalDeds.toFixed(2));
+        }
+        rows.push(row); 
+        tTotal += empTotalDeds;
+      }
     });
-    if (dynamicHeaders.length === 0) return { headers: ["Emp No", "Name", "No Custom Deductions"], rows: [], footer: [] };
-    return { headers: ["Emp No", "Name", ...dynamicHeaders, "Total Custom Deductions"], rows, footer: ["", "TOTAL", ...columnTotals.map(t => t.toFixed(2)), tTotal.toFixed(2)] };
+
+    if (dynamicHeaders.length === 0) {
+      return { 
+        headers: spmReportsEnabled ? ["Emp No", "Name", "Salary Advance"] : ["Emp No", "Name", "No Custom Deductions"], 
+        rows: [], 
+        footer: [],
+        reportTitle: spmReportsEnabled
+          ? `Schedule 3: Salary Advance - ${monthLabel} ${selectedYear}`
+          : `Custom Deductions - ${monthLabel} ${selectedYear}`
+      };
+    }
+
+    const finalHeaders = spmReportsEnabled
+      ? ["Emp No", "Name", ...dynamicHeaders]
+      : ["Emp No", "Name", ...dynamicHeaders, "Total Custom Deductions"];
+
+    const finalFooter = spmReportsEnabled
+      ? ["", "TOTAL", ...columnTotals.map(t => t.toFixed(2))]
+      : ["", "TOTAL", ...columnTotals.map(t => t.toFixed(2)), tTotal.toFixed(2)];
+
+    return { 
+      headers: finalHeaders, 
+      rows, 
+      footer: finalFooter,
+      reportTitle: spmReportsEnabled
+        ? `Schedule 3: Salary Advance - ${monthLabel} ${selectedYear}`
+        : `Custom Deductions - ${monthLabel} ${selectedYear}`
+    };
   };
 
   const generateLoanData = () => {
@@ -223,7 +305,6 @@ const Reports = () => {
 
   const fmt = (n) => (Number(n) || 0).toFixed(2);
 
-  const monthLabel = months.find(m => m.value === selectedMonth)?.label || selectedMonth;
 
   const generateSalaryAllowanceTotalData = () => {
     const headers = [
@@ -858,7 +939,7 @@ const Reports = () => {
     const isWideTable = headers.length > 9;
     const doc = new jsPDF("landscape", "mm", isWideTable ? "a3" : "a4");
     doc.setFontSize(isWideTable ? 18 : 16);
-    doc.text(reportTitle || `${title} - ${selectedMonth}/${selectedYear}`, 14, 15);
+    doc.text(reportTitle || `${title} - ${monthLabel} ${selectedYear}`, 14, 15);
     let startY = 22;
     if (subtitle) {
       doc.setFontSize(10);
@@ -1039,7 +1120,7 @@ const Reports = () => {
     { id: 4, title: "Overtime Summary", desc: "Morning, Night, and Holiday OT breakdown.", icon: <Clock className="w-6 h-6 text-sky-600" />, func: generateOTData, file: "Overtime_Summary" },
     { id: 5, title: "Dynamic Allowances", desc: "Breakdown of all allowances only.", icon: <Wallet className="w-6 h-6 text-purple-600" />, func: generateAllowancesOnlyData, file: "Allowances_Report" },
     { id: 6, title: "Dynamic Bonuses", desc: "Breakdown of bonuses only.", icon: <Gift className="w-6 h-6 text-teal-600" />, func: generateBonusesOnlyData, file: "Bonuses_Report" },
-    { id: 7, title: "Custom Deductions", desc: "Dynamic breakdown of custom deductions.", icon: <Scissors className="w-6 h-6 text-pink-600" />, func: generateDynamicDeductionsData, file: "Custom_Deductions" },
+    { id: 7, title: spmReportsEnabled ? "Schedule 3: Salary Advance" : "Custom Deductions", desc: spmReportsEnabled ? "Salary advance deductions and other staff advances." : "Dynamic breakdown of custom deductions.", icon: <Scissors className="w-6 h-6 text-pink-600" />, func: generateDynamicDeductionsData, file: spmReportsEnabled ? "Schedule_3_Salary_Advance" : "Custom_Deductions" },
     { id: 8, title: "Staff Loans", desc: "Loan installments, interest and balance.", icon: <CreditCard className="w-6 h-6 text-orange-600" />, func: generateLoanData, file: "Staff_Loans" },
     { id: 9, title: "No Pay Details", desc: "Deductions based on absent days.", icon: <FileCheck className="w-6 h-6 text-red-600" />, func: generateNoPayData, file: "NoPay_Details" },
     { id: 10, title: "Cash Coinage (Edit)", desc: "Interactive note breakdown for allowance payouts.", icon: <Banknote className="w-6 h-6 text-emerald-600" />, isCoinage: true }
@@ -1053,7 +1134,22 @@ const Reports = () => {
             <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><FileSpreadsheet className="text-blue-600"/> Payroll Documents & Schedules</h1>
             <p className="text-gray-500 text-sm mt-1">Load data first, preview reports, then download Excel or PDF.</p>
           </div>
-          <div className="flex items-end gap-4">
+          <div className="flex flex-wrap items-end gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Company</label>
+              <select
+                value={selectedCompany}
+                onChange={(e) => setSelectedCompany(e.target.value)}
+                className="w-48 sm:w-56 px-3 py-2 border rounded-lg bg-gray-50 outline-none text-sm text-gray-700"
+              >
+                <option value="">All Companies</option>
+                {companies.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.company_code ? `${c.company_code} - ${c.name}` : c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">Month</label>
               <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-32 px-3 py-2 border rounded-lg bg-gray-50 outline-none">

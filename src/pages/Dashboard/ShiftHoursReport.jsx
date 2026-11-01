@@ -6,16 +6,24 @@ import { fetchCompanies, fetchDepartments } from "@services/ApiDataService";
 import shiftHoursReportService from "@services/shiftHoursReportService";
 import DatePickerInput from "@components/DatePickerInput";
 
-/** Display duration as H:MM (supports API string or decimal hours). */
-const formatHm = (value) => {
-  if (value == null || value === "") return "0:00";
-  if (typeof value === "string" && value.includes(":")) return value;
+/** Display duration as HH:MM (supports API string or decimal hours). */
+const formatHHMM = (value) => {
+  if (value == null || value === "") return "00:00";
+  if (typeof value === "string" && value.includes(":")) {
+    const parts = value.trim().split(":");
+    if (parts.length >= 2) {
+      const h = parseInt(parts[0], 10) || 0;
+      const m = parseInt(parts[1], 10) || 0;
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    }
+    return value;
+  }
   const decimal = Number(value);
-  if (Number.isNaN(decimal)) return "0:00";
+  if (Number.isNaN(decimal) || decimal <= 0) return "00:00";
   const totalMinutes = Math.max(0, Math.round(decimal * 60));
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
-  return `${h}:${String(m).padStart(2, "0")}`;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 };
 
 const ShiftHoursReport = () => {
@@ -78,12 +86,9 @@ const ShiftHoursReport = () => {
       Shift: `${r.shift_start} - ${r.shift_end}`,
       "In Time": r.in_time,
       "Out Time": r.out_time,
-      "Within Shift Hours (H:MM)": formatHm(r.within_shift_hours),
-      "Extra Hours (H:MM)": formatHm(r.extra_hours),
-      "Total Worked Hours (H:MM)": formatHm(r.total_worked_hours),
-      "Within Shift Hours (decimal)": r.within_shift_hours_decimal ?? "",
-      "Extra Hours (decimal)": r.extra_hours_decimal ?? "",
-      "Total Worked Hours (decimal)": r.total_worked_hours_decimal ?? "",
+      "Within Shift Hours (HH:MM)": formatHHMM(r.within_shift_hours),
+      "Extra Hours (HH:MM)": formatHHMM(r.extra_hours),
+      "Total Worked Hours (HH:MM)": formatHHMM(r.total_worked_hours),
     }));
     const ws = XLSX.utils.json_to_sheet(sheetRows);
     const wb = XLSX.utils.book_new();
@@ -96,7 +101,7 @@ const ShiftHoursReport = () => {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Shift Hours Reports</h1>
         <p className="text-gray-600 text-sm">
-          Within-shift working hours and extra hours after shift end (shown as <span className="font-semibold">H:MM</span>)
+          Within-shift working hours and extra hours after shift end (shown as <span className="font-semibold">HH:MM</span>)
         </p>
       </div>
 
@@ -165,12 +170,12 @@ const ShiftHoursReport = () => {
       {totals && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
           <div className="bg-white border rounded-xl p-4">
-            <p className="text-xs text-gray-500">Within Shift Hours</p>
-            <p className="text-xl font-bold text-blue-700 font-mono">{formatHm(totals.within_shift_hours)}</p>
+            <p className="text-xs text-gray-500">Within Shift Hours (HH:MM)</p>
+            <p className="text-xl font-bold text-blue-700 font-mono">{formatHHMM(totals.within_shift_hours)}</p>
           </div>
           <div className="bg-white border rounded-xl p-4">
-            <p className="text-xs text-gray-500">Extra Hours</p>
-            <p className="text-xl font-bold text-indigo-700 font-mono">{formatHm(totals.extra_hours)}</p>
+            <p className="text-xs text-gray-500">Extra Hours (HH:MM)</p>
+            <p className="text-xl font-bold text-indigo-700 font-mono">{formatHHMM(totals.extra_hours)}</p>
           </div>
           <div className="bg-white border rounded-xl p-4">
             <p className="text-xs text-gray-500">Records</p>
@@ -189,9 +194,9 @@ const ShiftHoursReport = () => {
               <th className="p-3 text-left">Shift</th>
               <th className="p-3 text-left">In</th>
               <th className="p-3 text-left">Out</th>
-              <th className="p-3 text-right">Within (H:MM)</th>
-              <th className="p-3 text-right">Extra (H:MM)</th>
-              <th className="p-3 text-right">Total (H:MM)</th>
+              <th className="p-3 text-right">Within (HH:MM)</th>
+              <th className="p-3 text-right">Extra (HH:MM)</th>
+              <th className="p-3 text-right">Total (HH:MM)</th>
             </tr>
           </thead>
           <tbody>
@@ -208,9 +213,9 @@ const ShiftHoursReport = () => {
                   <td className="p-3 font-mono text-xs">{r.shift_start} - {r.shift_end}</td>
                   <td className="p-3 font-mono">{r.in_time}</td>
                   <td className="p-3 font-mono">{r.out_time}</td>
-                  <td className="p-3 text-right font-semibold text-blue-700 font-mono">{formatHm(r.within_shift_hours)}</td>
-                  <td className="p-3 text-right font-semibold text-indigo-700 font-mono">{formatHm(r.extra_hours)}</td>
-                  <td className="p-3 text-right font-mono">{formatHm(r.total_worked_hours)}</td>
+                  <td className="p-3 text-right font-semibold text-blue-700 font-mono">{formatHHMM(r.within_shift_hours)}</td>
+                  <td className="p-3 text-right font-semibold text-indigo-700 font-mono">{formatHHMM(r.extra_hours)}</td>
+                  <td className="p-3 text-right font-mono">{formatHHMM(r.total_worked_hours)}</td>
                 </tr>
               ))
             )}
