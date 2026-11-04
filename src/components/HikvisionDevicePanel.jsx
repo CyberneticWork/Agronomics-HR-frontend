@@ -183,7 +183,7 @@ export default function HikvisionDevicePanel({ companies = [] }) {
         if (r.isConfirmed) {
           const envText = [
             `DEVICE_IP=${cfg?.device?.ip || ""}`,
-            `DEVICE_PORT=${cfg?.device?.port || 80}`,
+            `DEVICE_PORT=${Number(cfg?.device?.port || 80) === 80 ? 443 : cfg?.device?.port}`,
             `DEVICE_USER=${cfg?.device?.username || "admin"}`,
             `DEVICE_PASSWORD=${cfg?.device?.password || ""}`,
             `CLOUD_PUNCHES_URL=${punches}`,
