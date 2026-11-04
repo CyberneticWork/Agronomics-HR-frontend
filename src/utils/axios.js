@@ -97,9 +97,14 @@ axios.interceptors.response.use(
       if (status === 422 && err.response.data.errors && urlIsLogin(err)) {
         err.response.data = { message: "The provided credentials are incorrect." };
       } else if (status >= 500) {
-        // Keep backend error text for employee save so HR sees the real cause
-        // (unique login, missing fields, etc.) instead of a generic wipe.
-        if (urlIsEmployeeWrite(err)) {
+        // Keep backend error text for employee save / device sync so HR sees the real cause
+        // instead of a generic wipe (e.g. Sync Now 503 migrate pending).
+        const url = String(err?.config?.url || "") + String(err?.config?.params?.__lr || "");
+        const keepMessage =
+          urlIsEmployeeWrite(err) ||
+          /hikvision\/devices\/\d+\/sync/i.test(url) ||
+          status === 503;
+        if (keepMessage && (err.response.data.message || err.response.data.error)) {
           const next = {
             message:
               err.response.data.error ||
@@ -150,8 +155,7 @@ function urlIsEmployeeWrite(err) {
   const path = `${url} ${lr}`;
   const isEmployees =
     path.includes("/employees") ||
-    path.includes("/employes") ||
-    path.includes("/employee-leave-balances");
+    path.includes("/employes");
   return isEmployees && (method === "post" || method === "put" || method === "patch");
 }
 
