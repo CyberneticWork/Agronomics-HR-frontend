@@ -69,9 +69,40 @@ const EmployeeLeaveBalance = () => {
     loadData();
   }, [loadData]);
 
+  // Which leave types are already assigned to this employee and year (excluding current edited row)
+  const existingLeaveTypesForEmployee = useMemo(() => {
+    if (!form.employee_id || !form.year) return new Set();
+    const set = new Set();
+    rows.forEach((r) => {
+      if (
+        String(r.employee_id) === String(form.employee_id) &&
+        String(r.year) === String(form.year) &&
+        r.id !== editingId
+      ) {
+        set.add(r.leave_type);
+      }
+    });
+    return set;
+  }, [rows, form.employee_id, form.year, editingId]);
+
+  const hasDuplicateConflict = existingLeaveTypesForEmployee.has(form.leave_type);
+
   const openCreate = () => {
     setEditingId(null);
-    setForm(emptyForm);
+    const yr = filters.year || String(currentYear);
+    const initialEmp = employees[0]?.id ? String(employees[0].id) : "";
+    const taken = new Set(
+      rows
+        .filter((r) => String(r.employee_id) === String(initialEmp) && String(r.year) === String(yr))
+        .map((r) => r.leave_type)
+    );
+    const firstAvailable = leaveTypes.find((t) => !taken.has(t)) || "Annual Leave";
+    setForm({
+      ...emptyForm,
+      year: yr,
+      employee_id: initialEmp,
+      leave_type: firstAvailable,
+    });
     setShowForm(true);
   };
 
@@ -88,12 +119,50 @@ const EmployeeLeaveBalance = () => {
     setShowForm(true);
   };
 
+  const handleEmployeeChange = (employeeId) => {
+    const taken = new Set(
+      rows
+        .filter((r) => String(r.employee_id) === String(employeeId) && String(r.year) === String(form.year))
+        .map((r) => r.leave_type)
+    );
+    let nextType = form.leave_type;
+    if (taken.has(nextType)) {
+      const firstAvailable = leaveTypes.find((t) => !taken.has(t));
+      if (firstAvailable) nextType = firstAvailable;
+    }
+    setForm({ ...form, employee_id: employeeId, leave_type: nextType });
+  };
+
+  const handleYearChange = (year) => {
+    const taken = new Set(
+      rows
+        .filter((r) => String(r.employee_id) === String(form.employee_id) && String(r.year) === String(year) && r.id !== editingId)
+        .map((r) => r.leave_type)
+    );
+    let nextType = form.leave_type;
+    if (taken.has(nextType)) {
+      const firstAvailable = leaveTypes.find((t) => !taken.has(t));
+      if (firstAvailable) nextType = firstAvailable;
+    }
+    setForm({ ...form, year, leave_type: nextType });
+  };
+
   const handleSave = async (e) => {
     e.preventDefault();
     if (!form.employee_id || !form.year || !form.leave_type || form.entitled_days === "") {
       Swal.fire({ icon: "warning", title: "Missing fields", text: "Employee, year, leave type and days are required." });
       return;
     }
+
+    if (hasDuplicateConflict) {
+      Swal.fire({
+        icon: "warning",
+        title: "Duplicate Leave Balance",
+        text: `A leave balance for this employee already exists for ${form.leave_type} (${form.year}). Please choose another leave type or edit the existing record.`,
+      });
+      return;
+    }
+
     setSaving(true);
     try {
       const payload = {
@@ -115,10 +184,15 @@ const EmployeeLeaveBalance = () => {
       await loadData();
       Swal.fire({ icon: "success", title: "Saved", timer: 1200, showConfirmButton: false });
     } catch (err) {
+      const message =
+        err.response?.data?.message ||
+        err.response?.data?.error ||
+        err.message ||
+        "Request failed. Please try again.";
       Swal.fire({
         icon: "error",
         title: "Save failed",
-        text: err.response?.data?.message || err.message,
+        text: message,
       });
     } finally {
       setSaving(false);
@@ -200,7 +274,7 @@ const EmployeeLeaveBalance = () => {
         </div>
         <button
           onClick={loadData}
-          className="inline-flex items-center justify-center gap-2 px-3 py-2 bg-slate-800 text-white rounded-lg text-sm font-semibold"
+          className="inline-flex items-center justify-center gap-2 px-3 py-2 bg-slate-800 text-white rounded-lg text-sm font-semibold hover:bg-slate-700"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} /> Refresh
         </button>
@@ -272,12 +346,15 @@ const EmployeeLeaveBalance = () => {
             <h2 className="text-xl font-bold mb-4">{editingId ? "Edit Leave Balance" : "Add Leave Balance"}</h2>
             <form onSubmit={handleSave} className="space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Employee</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">
+                  Employee {editingId && <span className="text-xs text-gray-400 font-normal">(Cannot be changed)</span>}
+                </label>
                 <select
-                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                  className="w-full border rounded-lg px-3 py-2 text-sm disabled:bg-gray-100 disabled:text-gray-600 disabled:cursor-not-allowed"
                   value={form.employee_id}
-                  onChange={(e) => setForm({ ...form, employee_id: e.target.value })}
+                  onChange={(e) => handleEmployeeChange(e.target.value)}
                   required
+                  disabled={Boolean(editingId)}
                 >
                   <option value="">Select employee</option>
                   {employees.map((emp) => (
@@ -289,12 +366,15 @@ const EmployeeLeaveBalance = () => {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Year</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">
+                    Year {editingId && <span className="text-xs text-gray-400 font-normal">(Cannot be changed)</span>}
+                  </label>
                   <select
-                    className="w-full border rounded-lg px-3 py-2 text-sm"
+                    className="w-full border rounded-lg px-3 py-2 text-sm disabled:bg-gray-100 disabled:text-gray-600 disabled:cursor-not-allowed"
                     value={form.year}
-                    onChange={(e) => setForm({ ...form, year: e.target.value })}
+                    onChange={(e) => handleYearChange(e.target.value)}
                     required
+                    disabled={Boolean(editingId)}
                   >
                     {yearOptions.map((y) => (
                       <option key={y} value={y}>{y}</option>
@@ -322,10 +402,20 @@ const EmployeeLeaveBalance = () => {
                   onChange={(e) => setForm({ ...form, leave_type: e.target.value })}
                   required
                 >
-                  {leaveTypes.map((t) => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
+                  {leaveTypes.map((t) => {
+                    const isTaken = existingLeaveTypesForEmployee.has(t);
+                    return (
+                      <option key={t} value={t} disabled={isTaken}>
+                        {t} {isTaken ? "(already assigned)" : ""}
+                      </option>
+                    );
+                  })}
                 </select>
+                {hasDuplicateConflict && (
+                  <p className="text-xs text-amber-600 mt-1 font-medium">
+                    ⚠️ A leave balance for this employee already exists for {form.leave_type} ({form.year}). Please choose another leave type or edit the existing record.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Status</label>
@@ -353,8 +443,8 @@ const EmployeeLeaveBalance = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={saving}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+                  disabled={saving || hasDuplicateConflict}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50 hover:bg-blue-700"
                 >
                   {saving ? "Saving..." : "Save"}
                 </button>
