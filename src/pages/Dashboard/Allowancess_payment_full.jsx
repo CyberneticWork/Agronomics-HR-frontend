@@ -15,8 +15,8 @@ const NOTES_ARRAY = [5000, 1000, 500, 100, 50, 20, 10, 5, 2, 1];
 const formatPeriodYm = (val, joined, resigned) => {
   if (val && typeof val === "string" && val !== "-" && val !== "TOTAL") {
     if (/^\d+Y\s+\d+M$/i.test(val.trim())) return val.trim();
-    const ymMatch = val.match(/(\d+)\s*y(?:ears?)?.*?(\d+)\s*m(?:onths?)?/i);
-    if (ymMatch) return `${ymMatch[1]}Y ${ymMatch[2]}M`;
+    const ymMatch = val.match(/(\d+(?:\.\d+)?)\s*y(?:ears?)?\D*?(\d+(?:\.\d+)?)\s*m(?:onths?)?/i);
+    if (ymMatch) return `${Math.floor(Number(ymMatch[1]))}Y ${Math.floor(Number(ymMatch[2]))}M`;
     const yOnly = val.match(/(\d+)\s*y(?:ears?)?/i);
     if (yOnly) return `${yOnly[1]}Y 0M`;
     const mOnly = val.match(/(\d+)\s*m(?:onths?)?/i);
@@ -64,6 +64,7 @@ const Reports = () => {
   const [reportData, setReportData] = useState([]);
   const [scheduleReportData, setScheduleReportData] = useState(null);
   const [leaveSummaryData, setLeaveSummaryData] = useState([]);
+  const [attendanceReportData, setAttendanceReportData] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
 
   const [showCoinageModal, setShowCoinageModal] = useState(false);
@@ -97,15 +98,22 @@ const Reports = () => {
   const handleFetchData = async () => {
     try {
       setIsLoading(true);
-      const [data, scheduleData, leaveData] = await Promise.all([
+      let attendanceError = null;
+      const [data, scheduleData, leaveData, attendanceData] = await Promise.all([
         ReportService.getMonthlyReportData(selectedMonth, selectedYear, selectedCompany),
         ReportService.getScheduleReportData(selectedMonth, selectedYear, selectedCompany),
         ReportService.getLeaveSummaryData(selectedMonth, selectedYear, selectedCompany).catch(() => []),
+        ReportService.getAttendanceReportData(selectedMonth, selectedYear, selectedCompany).catch((err) => {
+          attendanceError = err?.response?.status ? `${err.response.status} ${err.response?.data?.message || err.message}` : (err?.message || "request failed");
+          return [];
+        }),
       ]);
       setReportData(data);
       setScheduleReportData(scheduleData);
       setLeaveSummaryData(Array.isArray(leaveData) ? leaveData : []);
+      setAttendanceReportData(Array.isArray(attendanceData) ? attendanceData : []);
       if(data.length === 0) Swal.fire("No Data", "No salaries processed for this month.", "info");
+      else if (attendanceError) Swal.fire({ icon: "warning", title: "Attendance Report unavailable", text: `Other reports loaded, but the attendance data request failed (${attendanceError}). The backend may need to be updated/deployed.` });
       else Swal.fire({ icon: "success", title: "Data Loaded", text: `Ready to generate reports for ${data.length} employees.`, timer: 1500, showConfirmButton: false });
     } catch (error) {
       const errorMsg = error.response?.data?.message || error.message;
@@ -124,12 +132,13 @@ const Reports = () => {
 
   const isAmountColumn = (header, colIndex, rows) => {
     if (!header && header !== 0) return false;
+    if (/\s\([a-i]\)$/i.test(String(header).trim())) return true;
     const h = String(header).trim().toLowerCase();
     if (
       h === "emp no" || h === "emp_no" || h === "employee no" || h === "epf no" || h === "epf_no" ||
       h === "member no." || h === "member no" || h === "name" || h === "employee name" ||
       h.includes("bank account") || h.includes("account no") || h.includes("bank name") || h.includes("branch") ||
-      h.includes("date") || h.includes("period") || h.includes("month") || h.includes("year") ||
+      h.includes("date") || h.includes("period") || (h.includes("month") && !h.includes("bonus")) || h.includes("year") ||
       h.includes("notes & coins") || h.includes("nos.") || h.includes("days") || h.includes("rate") ||
       h.includes("entitlement") || h.includes("obtained") || h.includes("leaves") ||
       (h.includes("balance") && !h.includes("loan") && !h.includes("rs") && !h.includes("outstanding") && !h.includes("amount") && !h.includes("total"))
@@ -155,20 +164,122 @@ const Reports = () => {
     return false;
   };
 
+  const isCoinageSummaryTable = (headers) =>
+    Array.isArray(headers) && headers.length === 3 &&
+    String(headers[0]).trim() === "Notes & Coins" && String(headers[1]).trim() === "Nos." && String(headers[2]).trim() === "Amount Rs.";
+
   const buildColumnStyles = (headers, rows) => {
     const styles = {};
     if (!headers || !headers.length) return styles;
+    if (isCoinageSummaryTable(headers)) {
+      return {
+        0: { halign: 'left', cellWidth: 80 },
+        1: { halign: 'right', cellWidth: 80 },
+        2: { halign: 'right', cellWidth: 80 },
+      };
+    }
     headers.forEach((h, i) => {
       const hStr = String(h).trim();
       const numVal = Number(hStr.replace(/,/g, ''));
       if (NOTES_ARRAY.includes(numVal)) {
         styles[i] = { halign: 'center' };
       } else if (isAmountColumn(h, i, rows)) {
-        styles[i] = { halign: 'right' };
+        styles[i] = headers.length <= 7 ? { halign: 'right', cellWidth: 38 } : { halign: 'right' };
+      } else if (headers.length <= 7) {
+        const hl = String(h).trim().toLowerCase();
+        if (hl === "name" || hl === "employee name") styles[i] = { halign: 'left', cellWidth: 'auto', overflow: 'ellipsize' };
+        else if (hl === "emp no" || hl === "epf no") styles[i] = { halign: 'left', cellWidth: 28 };
       }
     });
     return styles;
   };
+
+  const NET_PAY_REPORT_FILES = ["Summary_Net_Pay", "Summary_Net_Pay_Breakdown", "Coinage_Monthly_Bonus", "Coinage_Staff_Allowance", "Overtime_Schedule", "Overtime_Summary", "Payslip_OT", "Payslip_Annual_Bonus", "Payslip_Salary"];
+
+  const downloadStyledXlsx = async (dataFunc, filename) => {
+    if (reportData.length === 0) return Swal.fire("Warning", "Please load data first!", "warning");
+    const { headers, rows, footer, reportTitle, multiHead } = dataFunc();
+    if (rows.length === 0) return Swal.fire("Empty", "No data available for this report.", "info");
+    const ExcelJS = (await import("exceljs")).default;
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("Report");
+    const coinage = isCoinageSummaryTable(headers);
+    const amountCols = headers.map((h, i) => (coinage ? i > 0 : isAmountColumn(h, i, rows)));
+    const lastCol = headers.length;
+
+    ws.mergeCells(1, 1, 1, lastCol);
+    const titleCell = ws.getCell(1, 1);
+    titleCell.value = reportTitle || filename;
+    titleCell.font = { bold: true, size: 14 };
+    titleCell.alignment = { horizontal: "left", vertical: "middle" };
+    ws.getRow(1).height = 24;
+
+    const thin = { style: "thin", color: { argb: "FFCBD5E1" } };
+    const border = { top: thin, left: thin, bottom: thin, right: thin };
+    const toValue = (v, isAmt) => {
+      if (!isAmt) return v;
+      const n = Number(String(v).replace(/,/g, ""));
+      return v === "" || v === "-" || v == null || isNaN(n) ? v : n;
+    };
+    const styleRow = (row, opts = {}) => {
+      row.height = 20;
+      row.eachCell({ includeEmpty: true }, (cell, ci) => {
+        cell.border = border;
+        cell.font = { size: 11, bold: !!opts.bold, color: opts.head ? { argb: "FFFFFFFF" } : undefined };
+        if (opts.head) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E293B" } };
+        if (opts.foot) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF1F5F9" } };
+        const right = amountCols[ci - 1];
+        cell.alignment = { horizontal: right ? "right" : "left", vertical: "middle", indent: 1 };
+        if (!opts.head && right && typeof cell.value === "number") cell.numFmt = "#,##0.00";
+      });
+    };
+
+    if (multiHead?.length) {
+      const taken = new Set();
+      multiHead.forEach((hr, ri) => {
+        const rowNo = ws.rowCount + 1;
+        const row = ws.addRow(new Array(lastCol).fill(null));
+        let col = 1;
+        hr.forEach((c) => {
+          while (taken.has(`${ri}:${col}`)) col++;
+          const rs = c.rowSpan || 1, cs = c.colSpan || 1;
+          for (let r = 0; r < rs; r++) for (let k = 0; k < cs; k++) taken.add(`${ri + r}:${col + k}`);
+          row.getCell(col).value = String(c.content).replace(/\n/g, " ");
+          if (rs > 1 || cs > 1) ws.mergeCells(rowNo, col, rowNo + rs - 1, col + cs - 1);
+          col += cs;
+        });
+      });
+      for (let r = 2; r < 2 + multiHead.length; r++) {
+        const row = ws.getRow(r);
+        row.height = 20;
+        row.eachCell({ includeEmpty: true }, (cell) => {
+          cell.border = border;
+          cell.font = { size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E293B" } };
+          cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+        });
+      }
+    } else {
+      styleRow(ws.addRow(headers), { head: true, bold: true });
+    }
+    rows.forEach((r) => styleRow(ws.addRow(r.map((v, i) => toValue(v, amountCols[i])))));
+    if (footer?.length) styleRow(ws.addRow(footer.map((v, i) => toValue(v, amountCols[i]))), { foot: true, bold: true });
+
+    headers.forEach((h, i) => {
+      const hl = String(h).trim().toLowerCase();
+      ws.getColumn(i + 1).width = coinage ? 24 : amountCols[i] ? 20 : (hl === "name" || hl === "employee name") ? 38 : (hl === "emp no" || hl === "epf no") ? 14 : (i === 0 ? 24 : 18);
+    });
+
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.setAttribute("download", `${filename}_${selectedYear}_${selectedMonth}.xlsx`);
+    document.body.appendChild(link); link.click(); link.remove();
+  };
+
+  const downloadExcel = (dataFunc, filename) =>
+    NET_PAY_REPORT_FILES.includes(filename) ? downloadStyledXlsx(dataFunc, filename) : downloadCSV(dataFunc, filename);
 
   const sumField = (fieldName) => {
     return (reportData || []).reduce((acc, emp) => acc + (Number(emp[fieldName]) || 0), 0);
@@ -374,6 +485,36 @@ const Reports = () => {
 
   // 4. Overtime Summary
   const generateOTData = () => {
+    if (spmReportsEnabled) {
+      const hc = { halign: 'center', valign: 'middle' };
+      const multiHead = [
+        [
+          { content: "Emp No", rowSpan: 2, styles: hc },
+          { content: "EPF No", rowSpan: 2, styles: hc },
+          { content: "Employee Name", rowSpan: 2, styles: hc },
+          { content: "Basic Salary", rowSpan: 2, styles: hc },
+          { content: "No. of OT hrs.", colSpan: 3, styles: hc },
+          { content: "Hourly Overtime Rate", colSpan: 2, styles: hc },
+          { content: "Overtime", rowSpan: 2, styles: hc },
+          { content: "Poya Allowance", rowSpan: 2, styles: hc },
+          { content: "Mercantile Holiday Allowance", rowSpan: 2, styles: hc },
+          { content: "Total", rowSpan: 2, styles: hc },
+        ],
+        [
+          { content: "Normal Days", styles: hc },
+          { content: "Holidays", styles: hc },
+          { content: "Total", styles: hc },
+          { content: "Normal Days", styles: hc },
+          { content: "Holidays", styles: hc },
+        ],
+      ];
+      return {
+        ...buildSpmOvertimeTable(),
+        multiHead,
+        reportTitle: `Overtime — ${monthLabel} ${selectedYear}`,
+      };
+    }
+
     let rows = [];
     let tNormHrs = 0, tNormAmt = 0, tDblHrs = 0, tDblAmt = 0, tGrandAmt = 0;
     const headers = spmReportsEnabled
@@ -858,22 +999,23 @@ const Reports = () => {
       return { rows, foot, subSalary, subDays, subAmount };
     };
 
-    const basic = buildSection("Basic", e => e.base_basic_salary, e => e.basic_no_pay_days ?? e.no_pay_days, e => e.basic_no_pay);
+    const basic = buildSection("Basic", e => e.base_basic_salary,     e => e.basic_nopay_days, e => e.basic_no_pay);
     const salary = buildSection("Salary", e => e.salary_component, e => e.no_pay_days, e => e.no_pay_amount);
-    const allowance = buildSection("Allowance", e => spmReportsEnabled ? e.monthly_bonus : e.allowance_component, e => e.bonus_no_pay_days ?? e.no_pay_days, e => e.bonus_no_pay);
+        const allowance = buildSection("Allowance", e => spmReportsEnabled ? e.monthly_bonus : e.allowance_component, e => e.allowance_nopay_days, e => e.bonus_no_pay);
 
     const headers = spmReportsEnabled
       ? ["Emp No", "EPF No", "Employee Name", "Salary Rs.", "Nopay Days", "Nopay Amount Rs."]
       : ["Employee Name", "Salary Rs.", "Nopay Days", "Nopay Amount Rs."];
 
-    const grandDays = basic.subDays + salary.subDays + allowance.subDays;
-    const grandAmount = basic.subAmount + salary.subAmount + allowance.subAmount;
-    const grandSalary = basic.subSalary + salary.subSalary + allowance.subSalary;
+    // The Salary section already combines basic and bonus no-pay, so it is the grand total
+    const grandDays = salary.subDays;
+    const grandAmount = salary.subAmount;
+    const grandSalary = salary.subSalary;
 
     const multiSections = [
-      { title: "Schedule 02: Nopay — Basic", headers, rows: basic.rows, footer: basic.foot },
-      { title: "Schedule 02: Nopay — Salary", headers, rows: salary.rows, footer: salary.foot },
-      { title: "Schedule 02: Nopay — Monthly Bonus", headers, rows: allowance.rows, footer: allowance.foot },
+      { title: "Schedule 02: Nopay - Basic", headers, rows: basic.rows, footer: basic.foot },
+      { title: "Schedule 02: Nopay - Salary", headers, rows: salary.rows, footer: salary.foot },
+      { title: "Schedule 02: Nopay - Monthly Bonus", headers, rows: allowance.rows, footer: allowance.foot },
     ];
 
     const summaryHeaders = ["Total Salary", "Total Nopay Days", "Total Nopay Amount", "Net Salary"];
@@ -886,7 +1028,7 @@ const Reports = () => {
       multiSections,
       summaryHeaders,
       summaryRows,
-      reportTitle: `Schedule 02: Nopay — ${monthLabel} ${selectedYear}`,
+      reportTitle: `Schedule 02: Nopay`,
     };
   };
 
@@ -908,7 +1050,7 @@ const Reports = () => {
         ];
 
     let tBasic = 0, tAllow = 0, tTotal = 0, tEmp = 0, tEmpr = 0, tContrib = 0;
-    const rows = (sf.details?.rows || []).map(r => {
+    const rows = (sf.detail?.rows || sf.details?.rows || []).map(r => {
       const basic = Number(r.basic_salary) || 0;
       const allow = Number(r.allowance) || 0;
       const tot = Number(r.total_salary) || (basic + allow);
@@ -948,13 +1090,20 @@ const Reports = () => {
     });
 
     const footer = spmReportsEnabled
-      ? ["", "TOTAL", "", "", "", fmt(tBasic), fmt(tAllow), fmt(tTotal), fmt(tEmp), fmt(tEmpr), fmt(tContrib)]
+      ? ["TOTAL", "", "", "", "", fmt(tBasic), fmt(tAllow), fmt(tTotal), fmt(tEmp), fmt(tEmpr), fmt(tContrib)]
       : ["TOTAL", "", "", fmt(tBasic), fmt(tAllow), fmt(tTotal), fmt(tEmp), fmt(tEmpr), fmt(tContrib)];
+
+    const cum = sf.cumulative;
+    const summaryRows = (cum?.rows || []).map(r => [
+      fmt(r.employee_contribution), fmt(r.employer_contribution), fmt(r.total_contribution),
+      fmt(r.payments_made), fmt(r.balance_payable),
+    ]);
 
     return {
       headers,
       rows,
       footer,
+      ...(summaryRows.length ? { summaryHeaders: cum.headers, summaryRows } : {}),
       reportTitle: `Schedule 07: Staff Fund — ${monthLabel} ${selectedYear}`,
     };
   };
@@ -1040,7 +1189,7 @@ const Reports = () => {
 
     const multiSections = sections.map((sec) => {
       const headers = spmReportsEnabled
-        ? ["Month", "Loan Date", "Loan Amount", "Loan Installment", "Total Loan Deduction", "Interest Deduction", "Total Interest Deduction"]
+        ? ["Month", "Loan Amount", "Loan Installment", "Total Loan Deduction", "Interest Deduction", "Total Interest Deduction"]
         : (sec.headers || ["Month", "Loan Amount", "Monthly Deduction", "Balance", "Interest", "Total Deduction"]);
 
       let tAmount = 0, tInst = 0, tDed = 0, tInt = 0, tTotInt = 0;
@@ -1052,12 +1201,10 @@ const Reports = () => {
         const totInt = Number(r.total_interest_deduction) || 0;
 
         tAmount += amt; tInst += inst; tDed += totDed; tInt += interest; tTotInt += totInt;
-        const lDate = r.loan_date || sec.loan_date || "-";
 
         if (spmReportsEnabled) {
           return [
             r.month || "-",
-            lDate,
             fmt(amt),
             fmt(inst),
             fmt(totDed),
@@ -1076,7 +1223,7 @@ const Reports = () => {
       });
 
       const footer = spmReportsEnabled
-        ? ["Total", "", fmt(tAmount), fmt(tInst), fmt(tDed), fmt(tInt), fmt(tTotInt)]
+        ? ["Total", fmt(tAmount), fmt(tInst), fmt(tDed), fmt(tInt), fmt(tTotInt)]
         : ["Total", fmt(tAmount), fmt(tInst), "", fmt(tInt), fmt(tDed + tInt)];
 
       return {
@@ -1215,8 +1362,46 @@ const Reports = () => {
     };
   };
 
+  // Shared SPM overtime table used by Overtime Summary and Overtime Schedule
+  const buildSpmOvertimeTable = () => {
+      const headers = [
+        "Emp No", "EPF No", "Employee Name", "Basic Salary (a)", "Normal Days (b)", "Holidays (c)", "Total (d)",
+        "Normal Rate (e)", "Holiday Rate (f)", "Overtime (g)", "Poya Allowance (h)", "Mercantile Holiday (i)", "Total",
+      ];
+      const sumNamed = (list, pattern) =>
+        (Array.isArray(list) ? list : []).reduce(
+          (acc, item) => (pattern.test(String(item?.name || "")) ? acc + (Number(item?.amount) || 0) : acc), 0);
+
+      let tOt = 0, tPoya = 0, tMerc = 0, tGrand = 0;
+      const rows = reportData.map((e) => {
+        const basic = Number(e.base_basic_salary ?? e.basic_salary) || 0;
+        const normalHrs = (Number(e.ot_morning_hours) || 0) + (Number(e.ot_night_hours) || 0);
+        const holidayHrs = Number(e.holiday_ot_hours) || 0;
+        const normalRate = (basic / 240) * 1.5;
+        const holidayRate = (basic / 240) * 2;
+        const ot = Number(e.total_ot_amount ?? e.ot_amount) || 0;
+        const poya = sumNamed([...(e.raw_allowances || []), ...(e.raw_bonuses || [])], /poya/i);
+        const merc = sumNamed([...(e.raw_allowances || []), ...(e.raw_bonuses || [])], /mercantile/i);
+        const total = ot + poya + merc;
+        tOt += ot; tPoya += poya; tMerc += merc; tGrand += total;
+        return [
+          e.emp_no || "-", e.epf_no || e.epf || e.epf_member_no || "-", e.name, fmt(basic), fmt(normalHrs), fmt(holidayHrs), fmt(normalHrs + holidayHrs),
+          fmt(normalRate), fmt(holidayRate), fmt(ot), fmt(poya), fmt(merc), fmt(total),
+        ];
+      });
+      return {
+        headers,
+        rows,
+        footer: ["Total Overtime", "", "", "", "", "", "", "", fmt(tOt), fmt(tPoya), fmt(tMerc), fmt(tGrand)],
+      };
+  };
+
   // 21. Overtime Schedule
   const generateOvertimeScheduleData = () => {
+    if (spmReportsEnabled) {
+      return { ...buildSpmOvertimeTable(), reportTitle: `Overtime — ${monthLabel} ${selectedYear}` };
+    }
+
     let rows = [];
     let tNormHrs = 0, tNormAmt = 0, tDblHrs = 0, tDblAmt = 0, tGrandAmt = 0;
     const headers = spmReportsEnabled
@@ -1363,13 +1548,14 @@ const Reports = () => {
   };
 
   // 29. OT Coinage Report
-  const generateOTCoinageData = () => {
+  const generateOTCoinageData = (dataOverride) => {
+    const sourceData = Array.isArray(dataOverride) ? dataOverride : reportData;
     let rows = [];
     let noteTotals = new Array(NOTES_ARRAY.length).fill(0);
     let grandTotalOT = 0;
     let grandTotalPay = 0;
 
-    reportData.forEach(e => {
+    sourceData.forEach(e => {
       const otAmount = Number(e.total_ot_amount) || ((Number(e.normal_ot_amount) || 0) + (Number(e.double_ot_amount) || 0)) || Number(e.ot_amount) || 0;
       if (otAmount > 0) {
         grandTotalOT += otAmount;
@@ -1632,6 +1818,495 @@ const Reports = () => {
     };
   };
 
+  // 31. Attendance Report (per employee daily sheet + late / leave summaries)
+  const generateAttendanceReportData = () => {
+    const list = Array.isArray(attendanceReportData) ? attendanceReportData : [];
+    const shortDate = (iso) => {
+      const [y, m, d] = String(iso).split("-");
+      return `${d}-${m}-${String(y).slice(2)}`;
+    };
+    const lateLabel = (mins) => {
+      const n = Number(mins);
+      if (!n) return "";
+      return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`;
+    };
+    const periodLabel = `${monthLabel} ${selectedYear}`;
+    const hc = { halign: "center", valign: "middle" };
+    const dailyHead = [
+      [
+        { content: "Date", rowSpan: 3, styles: hc },
+        { content: "Days", rowSpan: 3, styles: hc },
+        { content: "Remarks", rowSpan: 3, styles: hc },
+        { content: "Time In", rowSpan: 2, styles: hc },
+        { content: "Time Out", rowSpan: 2, styles: hc },
+        { content: "Late Time", rowSpan: 3, styles: hc },
+        { content: "Late Days", rowSpan: 3, styles: hc },
+        { content: "Leave Days", colSpan: 3, styles: hc },
+      ],
+      [
+        { content: "Short\n2 Hrs", styles: hc },
+        { content: "Half Days\n8.30-12.30\n1.30-5.30", styles: hc },
+        { content: "Full Days", styles: hc },
+      ],
+      [
+        { content: "am", styles: hc },
+        { content: "pm", styles: hc },
+        { content: "", styles: hc },
+        { content: "", styles: hc },
+        { content: "", styles: hc },
+      ],
+    ];
+    const dailyHeaders = ["Date", "Days", "Remarks", "Time In", "Time Out", "Late Time", "Late Days", "Short", "Half Days", "Full Days"];
+
+    const multiSections = [];
+    list.forEach((emp, idx) => {
+      const tag = `${emp.emp_no} — ${emp.name}`;
+      const t = emp.totals || {};
+      const dayRows = (emp.days || []).map((d) => {
+        const row = [
+          shortDate(d.date),
+          d.day,
+          d.remarks || "-",
+          d.time_in || "",
+          d.time_out || "",
+          lateLabel(d.late_minutes),
+          d.late_minutes !== null && d.late_minutes !== undefined ? "1" : "",
+          d.leave === "short" ? "1" : "",
+          d.leave === "half" ? "1" : "",
+          d.leave === "full" ? "1" : "",
+        ];
+        row.__holiday = !!d.is_holiday;
+        return row;
+      });
+
+      multiSections.push({
+        title: `Attendance — ${tag}`,
+        subtitle: `Emp No: ${emp.emp_no}   |   EPF No: ${emp.epf_no}   |   Name: ${emp.name}   |   ${periodLabel}`,
+        headers: dailyHeaders,
+        multiHead: dailyHead,
+        rows: dayRows,
+        footer: ["Total", "", "", "", "", lateLabel(t.late_minutes) || "0", String(t.late_days || 0), String(t.short || 0), String(t.half || 0), String(t.full || 0)],
+        newPage: idx > 0,
+      });
+      multiSections.push({
+        title: `Summary For ${periodLabel} — ${emp.emp_no}`,
+        headers: ["Description", "Count"],
+        rows: [["Short Leave", String(t.short || 0)], ["Half Days", String(t.half || 0)], ["Full Days", String(t.full || 0)]],
+        footer: [],
+      });
+      multiSections.push({
+        title: `Late Days — ${emp.emp_no}`,
+        headers: ["Date", "Time In", "Time Out", "Late Time", "Late Days"],
+        rows: (emp.late_rows || []).map((r) => [shortDate(r.date), r.time_in, r.time_out, lateLabel(r.late_minutes), "1"]),
+        footer: ["Total Days", "", "", lateLabel(t.late_minutes) || "0", String(t.late_days || 0)],
+      });
+      multiSections.push({
+        title: `Leave Days — ${emp.emp_no}`,
+        headers: ["Date", "Time In", "Time Out", "Full", "Short", "Half"],
+        rows: (emp.leave_rows || []).map((r) => [shortDate(r.date), r.time_in, r.time_out, r.kind === "full" ? "1" : "", r.kind === "short" ? "1" : "", r.kind === "half" ? "1" : ""]),
+        footer: ["", "", "", String(t.full || 0), String(t.short || 0), String(t.half || 0)],
+      });
+      multiSections.push({
+        title: `Summary For ${periodLabel} (Leave Balance Usage) — ${emp.emp_no}`,
+        subtitle: "Employee Signature: ......................................",
+        headers: ["Month", "Annual Leave (Full Days)", "Casual Short Leave", "Casual Half Days", "Cumulative No Pay Days"],
+        rows: (emp.monthly_summary || []).map((m) => [m.month_name, String(m.full), String(m.short), String(m.half), String(m.cumulative_nopay)]),
+        footer: [],
+      });
+    });
+
+    return {
+      headers: dailyHeaders,
+      rows: multiSections[0]?.rows || [],
+      footer: multiSections[0]?.footer || [],
+      multiSections,
+      pdfCompact: true,
+      reportTitle: `Attendance Report — ${periodLabel}`,
+    };
+  };
+
+  // 32. Payslip - OT (one overtime slip per employee)
+  const generatePayslipOtData = () => {
+    const company = scheduleReportData?.company || {};
+    const lastDay = new Date(Number(selectedYear), Number(selectedMonth), 0).getDate();
+    const period = `01.${selectedMonth}.${selectedYear}-${String(lastDay).padStart(2, "0")}.${selectedMonth}.${selectedYear}`;
+    const sumNamed = (list, pattern) =>
+      (Array.isArray(list) ? list : []).reduce(
+        (acc, item) => (pattern.test(String(item?.name || "")) ? acc + (Number(item?.amount) || 0) : acc), 0);
+
+    const slips = [];
+    let grand = 0;
+    reportData.forEach((e) => {
+      const ot = Number(e.total_ot_amount) || ((Number(e.normal_ot_amount) || 0) + (Number(e.double_ot_amount) || 0)) || Number(e.ot_amount) || 0;
+      const extras = [...(e.raw_allowances || []), ...(e.raw_bonuses || [])];
+      const amount = ot + sumNamed(extras, /poya/i) + sumNamed(extras, /mercantile/i);
+      if (amount <= 0) return;
+      grand += amount;
+      slips.push({
+        empNo: e.emp_no || "-",
+        epfNo: e.epf_no || e.epf || e.epf_member_no || "-",
+        name: e.name || "-",
+        amount,
+      });
+    });
+
+    const headers = ["Emp No", "EPF No", "Employee Name", "Overtime Period", "Overtime Payment Rs."];
+    const rows = slips.map((s) => [s.empNo, s.epfNo, s.name, period, fmt(s.amount)]);
+    return {
+      headers,
+      rows,
+      footer: ["", "", "TOTAL", "", fmt(grand)],
+      slips,
+      slipMeta: {
+        companyName: company.name || "Company",
+        companyAddress: company.location || "",
+        monthYear: `${monthLabel.toUpperCase()} ${selectedYear}`,
+        periodDots: period,
+        periodText: `${"01"}.${selectedMonth}.${selectedYear} to ${String(lastDay).padStart(2, "0")}.${selectedMonth}.${selectedYear}`,
+      },
+      reportTitle: `Payslip - OT — ${monthLabel} ${selectedYear}`,
+    };
+  };
+
+  // 34. Payslip - Salary (Basic Salary, Monthly Bonus and Combined slips per employee)
+  const generatePayslipSalaryData = () => {
+    const company = scheduleReportData?.company || {};
+    const n = (v) => Number(v) || 0;
+    const r2 = (v) => Math.round(v * 100) / 100;
+    const slips = [];
+    const rows = [];
+
+    reportData.forEach((e) => {
+      const basicSal = n(e.salary_component ?? e.basic_salary);
+      const bonus = n(e.monthly_bonus);
+      const basicNp = n(e.basic_no_pay);
+      const bonusNp = n(e.bonus_no_pay);
+      const advBasic = n(e.salary_advance_basic);
+      const advBonus = r2(Math.max(0, n(e.salary_advance) - advBasic));
+      const loanBasic = n(e.loan_on_basic);
+      const loanInt = n(e.loan_interest);
+      const sports = n(e.sports_fund);
+      const staff = n(e.staff_fund);
+      const epf8 = n(e.epf_8);
+
+      const basicGross = r2(basicSal - basicNp);
+      const basicDed = r2(advBasic + loanBasic + epf8);
+      const bonusDed = r2(bonusNp + advBonus + loanInt + sports + staff);
+      const basic = {
+        kind: "basic",
+        earnings: [["Basic Salary", basicSal], ["Less : No pay", basicNp]],
+        grossLabel: "Gross Pay", gross: basicGross,
+        deductions: [["Salary Advance", advBasic], ["Loan Installment", loanBasic], ["EPF 8%", epf8]],
+        totalDed: basicDed, netLabel: "Net Pay", net: r2(basicGross - basicDed),
+      };
+      const bonusSlip = {
+        kind: "bonus",
+        earnings: [["Monthly Bonus", bonus]],
+        grossLabel: "Gross Bonus", gross: bonus,
+        deductions: [["No pay", bonusNp], ["Salary Advance", advBonus], ["Loan Interest", loanInt], ["Sports Fund", sports], ["Staff Fund", staff]],
+        totalDed: bonusDed, netLabel: "Net Bonus", net: r2(bonus - bonusDed),
+      };
+      const combGross = r2(basicSal + bonus);
+      const combDed = r2(basicNp + bonusNp + advBasic + advBonus + loanBasic + loanInt + sports + staff + epf8);
+      const combined = {
+        kind: "combined",
+        earnings: [["Basic Salary", basicSal], ["Monthly Bonus", bonus]],
+        grossLabel: "Gross Pay", gross: combGross,
+        deductions: [["No pay", r2(basicNp + bonusNp)], ["Salary Advance", r2(advBasic + advBonus)], ["Loan Installment", loanBasic],
+          ["Loan Interest", loanInt], ["Sports Fund", sports], ["Staff Fund", staff], ["EPF 8%", epf8]],
+        totalDed: combDed, netLabel: "Net Pay", net: r2(combGross - combDed),
+      };
+
+      const empNo = e.emp_no || "-";
+      const epfNo = e.epf_no || e.epf || e.epf_member_no || "-";
+      const name = e.name || "-";
+      slips.push({ empNo, epfNo, name, variants: [basic, bonusSlip, combined] });
+
+      rows.push([empNo, epfNo, name, "Basic Salary", fmt(basicSal), fmt(0), fmt(basicGross), fmt(basicNp), fmt(advBasic), fmt(loanBasic), fmt(0), fmt(0), fmt(0), fmt(epf8), fmt(basicDed), fmt(basic.net)]);
+      rows.push([empNo, epfNo, name, "Monthly Bonus", fmt(0), fmt(bonus), fmt(bonus), fmt(bonusNp), fmt(advBonus), fmt(0), fmt(loanInt), fmt(sports), fmt(staff), fmt(0), fmt(bonusDed), fmt(bonusSlip.net)]);
+      rows.push([empNo, epfNo, name, "Combined", fmt(basicSal), fmt(bonus), fmt(combGross), fmt(basicNp + bonusNp), fmt(advBasic + advBonus), fmt(loanBasic), fmt(loanInt), fmt(sports), fmt(staff), fmt(epf8), fmt(combDed), fmt(combined.net)]);
+    });
+
+    return {
+      headers: ["Emp No", "EPF No", "Employee Name", "Payslip", "Basic Salary", "Monthly Bonus", "Gross Pay", "No Pay", "Salary Advance",
+        "Loan Installment", "Loan Interest", "Sports Fund", "Staff Fund", "EPF 8%", "Total Deductions", "Net Pay"],
+      rows,
+      slips,
+      slipMeta: {
+        kind: "salary",
+        companyName: company.name || "Company",
+        companyAddress: company.location || "",
+        monthYear: `${monthLabel.toUpperCase()} ${selectedYear}`,
+        monthYearTitle: `${monthLabel} ${selectedYear}`,
+      },
+      reportTitle: `Payslip - Salary — ${monthLabel} ${selectedYear}`,
+      emptyMessage: `No salary data found for ${monthLabel} ${selectedYear}. Process salary for this month first.`,
+    };
+  };
+
+  const downloadPayslipSalaryPdf = (result, filename) => {
+    const { slips, slipMeta } = result;
+    const doc = new jsPDF("landscape", "mm", "a4");
+    // Each slip occupies an exact A5 cell (148.5 x 210 mm); two cells fill an A4 landscape sheet
+    const cellW = 148.5;
+    const cellH = 210;
+    const inset = 8;
+    const slipW = cellW - inset * 2;
+    const slipH = cellH - inset * 2;
+    const top = inset;
+
+    const callName = (full) => {
+      const parts = String(full).trim().split(/\s+/);
+      return parts.find((p) => p.replace(/\./g, "").length > 2) || parts[0] || "";
+    };
+
+    const drawSlip = (cellX, spec, name) => {
+      const x = cellX + inset;
+      const padL = x + 8;
+      const xr = x + slipW - 8;
+      const lineW = 40;
+      const single = (yy) => doc.line(xr - lineW, yy, xr, yy);
+      const amt = (v, yy) => doc.text(fmt(v), xr - 1, yy, { align: "right" });
+
+      doc.setLineWidth(0.5);
+      doc.setDrawColor(0);
+      doc.rect(x, top, slipW, slipH);
+      doc.setTextColor(0);
+
+      let y = top + 16;
+      doc.setFont("times", "bold");
+      doc.setFontSize(16);
+      doc.text(slipMeta.companyName, padL, y, { maxWidth: slipW - 16 });
+      doc.setFontSize(9);
+      if (slipMeta.companyAddress) doc.text(slipMeta.companyAddress, padL, y + 6, { maxWidth: slipW - 16 });
+
+      y += 20;
+      doc.setFontSize(12);
+      doc.text("PAY SLIP", padL, y);
+      doc.text(`- ${slipMeta.monthYear}`, padL + 40, y);
+      y += 10;
+      doc.text(spec.kind === "combined" ? "Name" : "Employee Name", padL, y);
+      doc.text(`- ${name}`, padL + 40, y, { maxWidth: slipW - 56 });
+
+      y += 14;
+      doc.setFontSize(11);
+      doc.text("Rs.", xr - lineW / 2, y, { align: "center" });
+      doc.setLineWidth(0.3);
+      doc.line(xr - lineW / 2 - 4, y + 1, xr - lineW / 2 + 4, y + 1);
+
+      y += 8;
+      doc.setFontSize(11);
+      doc.text("Earnings", padL, y);
+      doc.line(padL, y + 1, padL + doc.getTextWidth("Earnings"), y + 1);
+      doc.setFont("times", "normal");
+      spec.earnings.forEach(([label, v]) => {
+        y += 7.2;
+        doc.text(label, padL, y);
+        amt(v, y);
+      });
+
+      y += 11;
+      single(y - 5.5);
+      doc.setFont("times", "bold");
+      doc.text(spec.grossLabel, padL, y);
+      amt(spec.gross, y);
+      single(y + 2);
+
+      y += 14;
+      doc.text("Deductions", padL, y);
+      doc.line(padL, y + 1, padL + doc.getTextWidth("Deductions"), y + 1);
+      doc.setFont("times", "normal");
+      spec.deductions.forEach(([label, v]) => {
+        y += 7.2;
+        doc.text(label, padL, y);
+        amt(v, y);
+      });
+
+      y += 11;
+      single(y - 5.5);
+      doc.setFont("times", "bold");
+      doc.text("Total Deduction", padL, y);
+      amt(spec.totalDed, y);
+      single(y + 2);
+
+      y += 14;
+      doc.text(spec.netLabel, padL, y);
+      amt(spec.net, y);
+      single(y + 1.8);
+      single(y + 3.3);
+
+      if (spec.kind !== "combined") {
+        const para = spec.kind === "basic"
+          ? `received the total salary and performance allowance for the month of ${slipMeta.monthYearTitle} and I checked the accuracy of the calculations.`
+          : `received the Monthly Bonus for the month of ${slipMeta.monthYearTitle} and I do understand the monthly bonus will be depend on the management decision.`;
+        const first = callName(name);
+        doc.setFont("times", "normal");
+        doc.setFontSize(9.5);
+        const lines = doc.splitTextToSize(`I ${first}, ${para}`, slipW - 16);
+        let ly = y + 11;
+        lines.forEach((ln, i) => {
+          if (i === 0) {
+            doc.setTextColor(0);
+            doc.text("I ", padL, ly);
+            const w1 = doc.getTextWidth("I ");
+            doc.setTextColor(30, 64, 175);
+            doc.text(first, padL + w1, ly);
+            const w2 = doc.getTextWidth(first);
+            doc.setTextColor(0);
+            doc.text(ln.slice(2 + first.length), padL + w1 + w2, ly);
+          } else {
+            doc.text(ln, padL, ly);
+          }
+          ly += 4.8;
+        });
+        doc.setTextColor(0);
+      }
+
+      const sy = top + slipH - 11;
+      doc.setFont("times", "normal");
+      doc.setFontSize(10);
+      doc.text("....................", padL + 2, sy);
+      doc.text("................................", xr - 42, sy);
+      doc.setFont("times", "bold");
+      doc.text("Date", padL + 8, sy + 5.5);
+      doc.text("Employee Signature", xr - 38, sy + 5.5);
+    };
+
+    slips.flatMap((s) => s.variants.map((spec) => ({ spec, name: s.name }))).forEach((item, idx) => {
+      if (idx > 0 && idx % 2 === 0) doc.addPage();
+      drawSlip((idx % 2) * cellW, item.spec, item.name);
+    });
+
+    doc.save(`${filename}_${selectedYear}_${selectedMonth}.pdf`);
+  };
+
+  // 33. Payslip - Annual Bonus (one slip per employee)
+  const generatePayslipAnnualBonusData = () => {
+    const company = scheduleReportData?.company || {};
+    const slips = [];
+    let grand = 0;
+    reportData.forEach((e) => {
+      const amount = (Array.isArray(e.raw_bonuses) ? e.raw_bonuses : []).reduce((acc, b) => {
+        const isAnnual = b?.is_annual === 1 || b?.is_annual === true || b?.is_annual === "1" ||
+          /annual|year.?end/i.test(String(b?.name || ""));
+        return isAnnual ? acc + (Number(b?.amount) || 0) : acc;
+      }, 0);
+      if (amount <= 0) return;
+      grand += amount;
+      slips.push({ empNo: e.emp_no || "-", epfNo: e.epf_no || e.epf || e.epf_member_no || "-", name: e.name || "-", amount });
+    });
+
+    return {
+      headers: ["Emp No", "EPF No", "Employee Name", "Annual Bonus Rs."],
+      rows: slips.map((s) => [s.empNo, s.epfNo, s.name, fmt(s.amount)]),
+      footer: ["", "", "TOTAL", fmt(grand)],
+      slips,
+      slipMeta: {
+        kind: "annual",
+        companyName: company.name || "Company",
+        companyAddress: company.location || "",
+        monthYear: `${monthLabel.toUpperCase()} ${selectedYear}`,
+        monthYearTitle: `${monthLabel} ${selectedYear}`,
+      },
+      reportTitle: `Payslip - Annual Bonus — ${monthLabel} ${selectedYear}`,
+      emptyMessage: `No annual bonus payments found for ${monthLabel} ${selectedYear}. Annual bonuses appear only in their configured payment months once salary is processed.`,
+    };
+  };
+
+  const downloadPayslipOtPdf = (result, filename) => {
+    const { slips, slipMeta } = result;
+    const doc = new jsPDF("portrait", "mm", "a4");
+    const pageW = 210;
+    const slipH = 125;
+    const left = 14;
+    const right = pageW - 14;
+
+    // The first word of the name longer than an initial (e.g. "P. V. Sumika ..." -> "Sumika")
+    const callName = (full) => {
+      const parts = String(full).trim().split(/\s+/);
+      return parts.find((p) => p.replace(/\./g, "").length > 2) || parts[0] || "";
+    };
+
+    slips.forEach((s, idx) => {
+      if (idx > 0 && idx % 2 === 0) doc.addPage();
+      const top = 10 + (idx % 2) * (slipH + 8);
+      doc.setLineWidth(0.5);
+      doc.setDrawColor(0);
+      doc.rect(left - 4, top, right - left + 8, slipH);
+
+      doc.setTextColor(0);
+      doc.setFont("times", "bold");
+      doc.setFontSize(15);
+      doc.text(slipMeta.companyName, left, top + 12);
+      doc.setFontSize(8);
+      if (slipMeta.companyAddress) doc.text(slipMeta.companyAddress, left, top + 17);
+
+      doc.setFontSize(11);
+      doc.text("PAY SLIP", left, top + 30);
+      doc.setLineWidth(0.3);
+      doc.line(left, top + 31, left + doc.getTextWidth("PAY SLIP"), top + 31);
+
+      const isAnnual = slipMeta.kind === "annual";
+      doc.text(isAnnual ? "Annual Bonus Payment" : "Overtime Payment", left, top + 41);
+      doc.text(`- ${slipMeta.monthYear}`, left + 50, top + 41);
+      doc.text("Employee Name", left, top + 51);
+      doc.text(`- ${s.name}`, left + 50, top + 51);
+
+      const rsX = left + 125;
+      if (isAnnual) {
+        doc.text("Rs.", rsX + 22, top + 64, { align: "center" });
+        doc.line(rsX + 8, top + 65, right - 6, top + 65);
+        doc.setFont("times", "normal");
+        doc.text("Annual Bonus Payment", left, top + 74);
+        doc.text(fmt(s.amount), right - 8, top + 73, { align: "right" });
+        doc.line(rsX + 5, top + 75, right - 4, top + 75);
+        doc.line(rsX + 5, top + 76.5, right - 4, top + 76.5);
+        doc.setFontSize(10);
+        const firstA = callName(s.name);
+        doc.text("I", left, top + 90);
+        doc.setTextColor(30, 64, 175);
+        doc.text(firstA, left + 3, top + 90);
+        const afterA = left + 3 + doc.getTextWidth(firstA);
+        doc.setTextColor(0);
+        doc.text(", received and accepted the year end bonus payment", afterA, top + 90);
+        doc.text(`for ${slipMeta.monthYearTitle} based on the management decision.`, left, top + 96);
+        doc.text("......................", left + 8, top + 112);
+        doc.text("..................................", left + 62, top + 112);
+        doc.setFont("times", "bold");
+        doc.text("Date", left + 14, top + 118);
+        doc.text("Employee Signature", left + 66, top + 118);
+        return;
+      }
+
+      const payText = `Overtime Payment from ${slipMeta.periodDots}`;
+      doc.text(payText, left, top + 66);
+      doc.text("Rs.", rsX, top + 66);
+      const amtText = fmt(s.amount);
+      doc.text(amtText, right - 2, top + 66, { align: "right" });
+      doc.line(rsX + 10, top + 67, right, top + 67);
+      doc.line(rsX + 10, top + 68.5, right, top + 68.5);
+
+      doc.setFont("times", "normal");
+      doc.setFontSize(10);
+      const first = callName(s.name);
+      doc.text("I", left, top + 82);
+      doc.setTextColor(30, 64, 175);
+      doc.text(first, left + 3, top + 82);
+      const afterName = left + 3 + doc.getTextWidth(first);
+      doc.setTextColor(0);
+      doc.text(", received the above overtime payment for the period", afterName, top + 82);
+      doc.text(`from ${slipMeta.periodText}.`, left, top + 88);
+
+      doc.text("......................", left + 8, top + 108);
+      doc.text("..................................", left + 62, top + 108);
+      doc.setFont("times", "bold");
+      doc.text("Date", left + 14, top + 114);
+      doc.text("Employee Signature", left + 66, top + 114);
+    });
+
+    doc.save(`${filename}_${selectedYear}_${selectedMonth}.pdf`);
+  };
+
   // --- COMBINED MULTI-REPORT MODAL & PDF GENERATORS ---
 
   const downloadCombinedPDF = () => {
@@ -1688,7 +2363,7 @@ const Reports = () => {
           }
         }
       });
-      if (initialData.length === 0) return Swal.fire("Empty", "No overtime payments for this month.", "info");
+      if (initialData.length === 0) return Swal.fire("Empty", `No overtime payments found for ${monthLabel} ${selectedYear}. Overtime is paid only for approved OT of employees with OT enabled, once salary is processed.`, "info");
     } else {
       reportData.forEach(e => {
         let amount = Math.round(Number(e.allowance_net) || Number(e.cash_amount) || 0);
@@ -1717,15 +2392,14 @@ const Reports = () => {
     try {
       if (coinageType === "ot") {
         await ReportService.saveOtCoinageData(editableCoinage);
-        setReportData(prev => prev.map(emp => {
+        const updatedData = reportData.map(emp => {
           const matched = editableCoinage.find(c => (c.process_id && c.process_id === emp.process_id) || c.emp_no === emp.emp_no);
-          if (matched) {
-            return { ...emp, saved_ot_coinage: { ...matched.notes } };
-          }
-          return emp;
-        }));
-        if (coinageFormat === 'csv') downloadCSV(generateOTCoinageData, "OT_Coinage_Report");
-        else downloadPDF(generateOTCoinageData, "OT Coinage Report", "OT_Coinage_Report");
+          return matched ? { ...emp, saved_ot_coinage: { ...matched.notes } } : emp;
+        });
+        setReportData(updatedData);
+        const otFunc = () => generateOTCoinageData(updatedData);
+        if (coinageFormat === 'csv') downloadCSV(otFunc, "OT_Coinage_Report");
+        else downloadPDF(otFunc, "OT Coinage Report", "OT_Coinage_Report");
         setShowCoinageModal(false);
         handleFetchData();
       } else {
@@ -1796,9 +2470,12 @@ const Reports = () => {
     if (reportData.length === 0) return Swal.fire("Warning", "Please load data first!", "warning");
     const result = dataFunc();
     const { headers, rows, footer, reportTitle, summaryHeaders, summaryRows, multiSections, letterLines, subtitle, multiHead } = result;
-    if (rows.length === 0 && !(multiSections?.length)) return Swal.fire("Empty", "No data available for this report.", "info");
-    const isWideTable = headers.length > 9;
-    const doc = new jsPDF("landscape", "mm", isWideTable ? "a3" : "a4");
+    if (result.slips && result.slips.length === 0) return Swal.fire("Empty", (result.emptyMessage || `No overtime payments found for ${monthLabel} ${selectedYear}. Select a month whose salary was processed with overtime.`), "info");
+    if (rows.length === 0 && !(multiSections?.length)) return Swal.fire("Empty", result.emptyMessage || "No data available for this report.", "info");
+    if (result.slips?.length) return result.slipMeta?.kind === "salary" ? downloadPayslipSalaryPdf(result, filename) : downloadPayslipOtPdf(result, filename);
+    const isCompactPdf = !!result.pdfCompact;
+    const isWideTable = headers.length > 9 && !isCompactPdf;
+    const doc = new jsPDF(isCompactPdf ? "portrait" : "landscape", "mm", isWideTable ? "a3" : "a4");
     doc.setFontSize(isWideTable ? 18 : 16);
     doc.text(reportTitle || `${title} - ${monthLabel} ${selectedYear}`, 14, 15);
     let startY = 22;
@@ -1817,6 +2494,9 @@ const Reports = () => {
     }
 
     const renderTable = (tableStartY, tableHeaders, tableRows, tableFooter, tableMultiHead) => {
+      const tableColumnStyles = isCompactPdf
+        ? Object.fromEntries(tableHeaders.map((h, i) => [i, { halign: /remarks|description|^month$/i.test(String(h)) ? 'left' : 'center' }]))
+        : buildColumnStyles(tableHeaders, tableRows);
       autoTable(doc, {
         startY: tableStartY,
         head: tableMultiHead || [tableHeaders],
@@ -1825,16 +2505,33 @@ const Reports = () => {
         theme: 'grid',
         headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' },
         footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold' },
-        styles: { fontSize: isWideTable ? 8 : 9.5, cellPadding: isWideTable ? 2.5 : 3.5, textColor: [20, 20, 20] },
-        columnStyles: buildColumnStyles(tableHeaders, tableRows),
+        styles: isCompactPdf
+          ? { fontSize: 7.5, cellPadding: 1.1, textColor: [20, 20, 20] }
+          : { fontSize: isWideTable ? 8 : 9.5, cellPadding: isWideTable ? 2.5 : 3.5, textColor: [20, 20, 20] },
+        columnStyles: tableColumnStyles,
         margin: { left: 14, right: 14 },
+        ...(isCoinageSummaryTable(tableHeaders) ? { tableWidth: 'wrap' } : {}),
+        didParseCell: (data) => {
+          if (data.section === 'foot') {
+            const colStyle = tableColumnStyles[data.column.index];
+            if (colStyle?.halign) data.cell.styles.halign = colStyle.halign;
+          }
+          if (isCompactPdf && data.section === 'body' && data.row.raw?.__holiday) {
+            data.cell.styles.fillColor = [209, 213, 219];
+          }
+        },
       });
     };
 
     if (multiSections?.length) {
       let y = startY;
       multiSections.forEach((section, idx) => {
-        if (idx > 0) y = (doc.lastAutoTable?.finalY || y) + 10;
+        if (section.newPage && idx > 0) {
+          doc.addPage();
+          y = 15;
+        } else if (idx > 0) {
+          y = (doc.lastAutoTable?.finalY || y) + 10;
+        }
         doc.setFontSize(12);
         doc.text(section.title, 14, y);
         if (section.subtitle) {
@@ -1843,7 +2540,7 @@ const Reports = () => {
           y += 4;
         }
         renderTable(y + 4, section.headers, section.rows, section.footer || [], section.multiHead);
-        if ((doc.lastAutoTable?.finalY || 0) > 180 && idx < multiSections.length - 1) {
+        if (!isCompactPdf && (doc.lastAutoTable?.finalY || 0) > 180 && idx < multiSections.length - 1) {
           doc.addPage();
           y = 20;
         }
@@ -1873,7 +2570,8 @@ const Reports = () => {
     if (reportData.length === 0) return Swal.fire("Warning", "Please load data first!", "warning");
     const result = card.func();
     const { headers, rows, footer, reportTitle, summaryHeaders, summaryRows, multiSections, multiHead } = result;
-    if (rows.length === 0 && !(multiSections?.length)) return Swal.fire("Empty", "No data available for this report.", "info");
+    if (result.slips && result.slips.length === 0) return Swal.fire("Empty", (result.emptyMessage || `No overtime payments found for ${monthLabel} ${selectedYear}. Select a month whose salary was processed with overtime.`), "info");
+    if (rows.length === 0 && !(multiSections?.length)) return Swal.fire("Empty", result.emptyMessage || "No data available for this report.", "info");
 
     const sections = multiSections?.length
       ? multiSections.map(s => ({ title: s.title, subtitle: s.subtitle, headers: s.headers, rows: s.rows, footer: s.footer || [], multiHead: s.multiHead }))
@@ -1891,9 +2589,45 @@ const Reports = () => {
       file: card.file,
       func: card.func,
       sections,
+      slips: result.slipMeta?.kind === "salary" ? result.slips : null,
+      slipMeta: result.slipMeta,
     });
     setShowPreviewModal(true);
   };
+
+  const renderSalarySlipPreview = (slips, meta) => (
+    <div className="space-y-6">
+      {slips.map((s) => (
+        <div key={`${s.empNo}-${s.epfNo}`} className="border border-slate-300 rounded-lg p-3 bg-slate-50">
+          <div className="text-xs font-semibold text-slate-600 mb-2">{s.empNo} · EPF {s.epfNo} · {s.name}</div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {s.variants.map((v) => (
+              <div key={v.kind} style={{ aspectRatio: "148 / 210", fontFamily: "'Times New Roman', Times, serif", fontVariantNumeric: "lining-nums tabular-nums" }} className="bg-white border-2 border-black px-5 py-5 text-[13px] leading-6 text-black flex flex-col">
+                <div className="font-bold text-base">{meta.companyName}</div>
+                <div className="text-[10px] font-bold mb-3">{meta.companyAddress}</div>
+                <div className="font-bold text-xs">PAY SLIP <span className="ml-8">- {meta.monthYear}</span></div>
+                <div className="font-bold text-xs mb-2">{v.kind === "combined" ? "Name" : "Employee Name"} <span className="ml-4">- {s.name}</span></div>
+                <div className="text-right font-bold underline pr-5">Rs.</div>
+                <div className="font-bold underline">Earnings</div>
+                {v.earnings.map(([l, a]) => (<div key={l} className="flex justify-between"><span>{l}</span><span className="w-28 text-right tabular-nums">{fmt(a)}</span></div>))}
+                <div className="flex justify-between font-bold mt-1"><span>{v.grossLabel}</span><span className="w-28 text-right tabular-nums border-t border-b border-black">{fmt(v.gross)}</span></div>
+                <div className="font-bold underline mt-3">Deductions</div>
+                {v.deductions.map(([l, a]) => (<div key={l} className="flex justify-between"><span>{l}</span><span className="w-28 text-right tabular-nums">{fmt(a)}</span></div>))}
+                <div className="flex justify-between font-bold mt-1"><span>Total Deduction</span><span className="w-28 text-right tabular-nums border-t border-b border-black">{fmt(v.totalDed)}</span></div>
+                <div className="flex justify-between font-bold mt-3"><span>{v.netLabel}</span><span className="w-28 text-right tabular-nums border-b-4 border-double border-black">{fmt(v.net)}</span></div>
+                {v.kind !== "combined" && (
+                  <div className="mt-3 text-[10.5px] leading-5">I <span className="text-blue-800">{String(s.name).trim().split(/\s+/).find((p) => p.replace(/\./g, "").length > 2) || s.name}</span>, {v.kind === "basic"
+                    ? `received the total salary and performance allowance for the month of ${meta.monthYearTitle} and I checked the accuracy of the calculations.`
+                    : `received the Monthly Bonus for the month of ${meta.monthYearTitle} and I do understand the monthly bonus will be depend on the management decision.`}</div>
+                )}
+                <div className="flex justify-between mt-auto pt-4 font-bold"><span>Date</span><span>Employee Signature</span></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 
   const openCombinedPreview = () => {
     if (reportData.length === 0) return Swal.fire("Warning", "Please load data first!", "warning");
@@ -1917,9 +2651,22 @@ const Reports = () => {
     <div key={section.title} className="mb-8 last:mb-0">
       <h3 className="text-base font-bold text-slate-800 mb-2 sticky top-0 bg-white py-1">{section.title}</h3>
       {section.subtitle && <div className="text-xs text-slate-600 font-medium mb-2">{section.subtitle}</div>}
-      <div className="overflow-x-auto border border-slate-200 rounded-lg shadow-sm">
-        <table className="w-full text-[13px] text-left whitespace-nowrap">
-          {section.multiHead ? (
+      <div className={`overflow-x-auto border border-slate-200 rounded-lg shadow-sm ${isCoinageSummaryTable(section.headers) ? "max-w-3xl" : ""}`}>
+        <table className={`w-full text-[13px] text-left whitespace-nowrap ${isCoinageSummaryTable(section.headers) ? "table-fixed" : ""}`}>
+          {section.multiHead && !section.multiHead.some(r => r.some(c => String(c.content) === "Coinage for Overtime (Rs.)")) ? (
+            <thead className="bg-slate-800 text-white">
+              {section.multiHead.map((hr, ri) => (
+                <tr key={ri} className="border-b border-slate-700">
+                  {hr.map((c, ci) => (
+                    <th key={ci} rowSpan={c.rowSpan || 1} colSpan={c.colSpan || 1}
+                      className="px-4 py-2.5 border border-slate-700 text-center font-semibold align-middle">
+                      {c.content}
+                    </th>
+                  ))}
+                </tr>
+              ))}
+            </thead>
+          ) : section.multiHead ? (
             <thead className="bg-slate-800 text-white">
               <tr className="border-b border-slate-700">
                 <th rowSpan={3} className="px-3 py-2 border border-slate-700 text-center font-semibold align-middle">Emp No</th>
@@ -1943,7 +2690,7 @@ const Reports = () => {
             <thead className="bg-slate-800 text-white">
               <tr>
                 {section.headers.map((h, i) => (
-                  <th key={i} className={`px-4 py-2.5 font-semibold ${isAmountColumn(h, i, section.rows) ? "text-right" : "text-left"}`}>
+                  <th key={i} className={`px-4 py-2.5 font-semibold ${isAmountColumn(h, i, section.rows) || (isCoinageSummaryTable(section.headers) && i > 0) ? "text-right" : "text-left"}`}>
                     {h}
                   </th>
                 ))}
@@ -1952,15 +2699,16 @@ const Reports = () => {
           )}
           <tbody>
             {section.rows.map((row, ri) => (
-              <tr key={ri} className={ri % 2 === 0 ? "bg-white hover:bg-slate-50/70" : "bg-slate-50/50 hover:bg-slate-100/70"}>
+              <tr key={ri} className={row.__holiday ? "bg-slate-300/70" : ri % 2 === 0 ? "bg-white hover:bg-slate-50/70" : "bg-slate-50/50 hover:bg-slate-100/70"}>
                 {row.map((cell, ci) => {
                   const h = section.headers[ci];
                   const numVal = Number(String(h).replace(/,/g, ''));
                   const isNoteCol = section.multiHead && NOTES_ARRAY.includes(numVal);
-                  const isAmt = isAmountColumn(h, ci, section.rows);
-                  const alignClass = isNoteCol ? "text-center font-mono" : isAmt ? "text-right font-mono font-medium" : "text-left";
+                  const isAmt = isAmountColumn(h, ci, section.rows) || (isCoinageSummaryTable(section.headers) && ci > 0);
+                  const isName = /^(employee )?name$/i.test(String(h).trim());
+                  const alignClass = isNoteCol ? "text-center font-mono" : isAmt ? "text-right font-mono font-medium tabular-nums" : isName ? "text-left max-w-[18rem] truncate" : "text-left";
                   return (
-                    <td key={ci} className={`px-3 py-2 border-t border-slate-100 text-slate-800 ${alignClass}`}>
+                    <td key={ci} title={isName ? String(cell) : undefined} className={`px-4 py-2.5 border-t border-slate-100 text-slate-800 ${alignClass}`}>
                       {cell}
                     </td>
                   );
@@ -1973,14 +2721,14 @@ const Reports = () => {
                   const h = section.headers[fi];
                   const numVal = Number(String(h).replace(/,/g, ''));
                   const isNoteCol = section.multiHead && NOTES_ARRAY.includes(numVal);
-                  const isAmt = isAmountColumn(h, fi, section.rows);
+                  const isAmt = isAmountColumn(h, fi, section.rows) || (isCoinageSummaryTable(section.headers) && fi > 0);
                   const alignClass = isNoteCol
                     ? "text-center font-mono bg-emerald-100 text-emerald-900 border-l border-r border-emerald-200"
                     : isAmt
-                    ? "text-right font-mono"
+                    ? "text-right font-mono tabular-nums"
                     : (fi === 1 && section.multiHead) ? "text-center" : "text-left";
                   return (
-                    <td key={fi} className={`px-3 py-2.5 ${alignClass}`}>
+                    <td key={fi} className={`px-4 py-2.5 ${alignClass}`}>
                       {cell}
                     </td>
                   );
@@ -2039,7 +2787,11 @@ const Reports = () => {
       { id: 28, title: "Leave Summary", desc: "Employee leave entitlement, obtained leaves and available balance.", icon: <FileText className="w-6 h-6 text-emerald-700" />, func: generateLeaveSummaryData, file: "Leave_Summary" },
       { id: 29, title: "OT Coinage Report", desc: "Overtime coinage breakdown (Notes & Coins) matching Excel format.", icon: <Coins className="w-6 h-6 text-sky-700" />, func: generateOTCoinageData, file: "OT_Coinage_Report" },
       { id: 30, title: "OT Coinage (Edit)", desc: "Interactive note & coin breakdown editor for overtime payouts.", icon: <Coins className="w-6 h-6 text-indigo-700" />, isCoinage: true, isOt: true },
-    ] : []),
+      { id: 31, title: "Attendance Report", desc: "Employee-wise daily attendance sheet with late, leave and monthly summaries.", icon: <Clock className="w-6 h-6 text-cyan-700" />, func: generateAttendanceReportData, file: "Attendance_Report" },
+            { id: 32, title: "Payslip-OT", desc: "Employee-wise overtime pay slips with signature section.", icon: <FileText className="w-6 h-6 text-indigo-700" />, func: generatePayslipOtData, file: "Payslip_OT" },
+      { id: 33, title: "Payslip-Annual Bonus", desc: "Employee-wise annual bonus pay slips with signature section.", icon: <FileText className="w-6 h-6 text-rose-700" />, func: generatePayslipAnnualBonusData, file: "Payslip_Annual_Bonus" },
+      { id: 34, title: "Payslip-Salary", desc: "Basic Salary, Monthly Bonus and Combined pay slips for every employee.", icon: <FileText className="w-6 h-6 text-teal-700" />, func: generatePayslipSalaryData, file: "Payslip_Salary" },
+          ] : []),
     { id: 14, title: "Schedule 02: Nopay", desc: "Basic, Salary & Allowance nopay sections with summary.", icon: <FileCheck className="w-6 h-6 text-red-700" />, func: generateSchedule02NoPayData, file: "Schedule_02_Nopay" },
     { id: 15, title: "Schedule 07: Staff Fund", desc: "Staff fund contributions & cumulative balance.", icon: <Wallet className="w-6 h-6 text-amber-700" />, func: generateSchedule07StaffFundData, file: "Schedule_07_Staff_Fund" },
     { id: 11, title: spmReportsEnabled ? "Salary & Monthly Bonus (Total)" : "Salary & Allowance (Total)", desc: spmReportsEnabled ? "Combined salary + monthly bonus view with Schedules 02–08." : "Combined salary + allowance view with Schedules 02–08.", icon: <FileBarChart className="w-6 h-6 text-blue-700" />, func: generateSalaryAllowanceTotalData, file: spmReportsEnabled ? "Salary_Monthly_Bonus_Total" : "Salary_Allowance_Total" },
@@ -2165,7 +2917,7 @@ const Reports = () => {
                       <Eye className="w-3.5 h-3.5" /> Preview Report
                     </button>
                     <div className="flex gap-2">
-                      <button onClick={() => downloadCSV(card.func, card.file)} className="flex-1 py-2 text-xs font-semibold bg-green-50 text-green-700 rounded-lg hover:bg-green-100 border border-green-200">
+                      <button onClick={() => downloadExcel(card.func, card.file)} className="flex-1 py-2 text-xs font-semibold bg-green-50 text-green-700 rounded-lg hover:bg-green-100 border border-green-200">
                         Excel
                       </button>
                       <button onClick={() => downloadPDF(card.func, card.title, card.file)} className="flex-1 py-2 text-xs font-semibold bg-red-50 text-red-700 rounded-lg hover:bg-red-100 border border-red-200">
@@ -2196,14 +2948,14 @@ const Reports = () => {
               </div>
 
               <div className="p-4 overflow-auto flex-1">
-                {previewReport.sections.map((section) => renderPreviewTable(section))}
+                {previewReport.slips ? renderSalarySlipPreview(previewReport.slips, previewReport.slipMeta) : previewReport.sections.map((section) => renderPreviewTable(section))}
               </div>
 
               <div className="p-4 border-t flex flex-wrap justify-end gap-3 bg-gray-50 rounded-b-2xl shrink-0">
                 {previewReport.func && (
                   <>
                     <button
-                      onClick={() => downloadCSV(previewReport.func, previewReport.file)}
+                      onClick={() => downloadExcel(previewReport.func, previewReport.file)}
                       className="px-4 py-2 text-xs font-semibold bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-1.5 shadow-sm"
                     >
                       <Download className="w-3.5 h-3.5" /> Download Excel
@@ -2256,14 +3008,33 @@ const Reports = () => {
 
               <div className="p-4 overflow-auto flex-1">
                 <table className="w-full text-xs text-left border-collapse">
-                  <thead className="bg-gray-100 text-gray-700 sticky top-0 border-b">
+                  <thead className="bg-gray-100 text-gray-700 sticky top-0 border-b z-10">
+                    {coinageType === "ot" ? (
+                      <>
+                        <tr>
+                          <th rowSpan={3} className="p-2 border text-center align-middle bg-gray-100">Emp<br />No</th>
+                          <th rowSpan={3} className="p-2 border text-center align-middle bg-gray-100">EPF<br />No</th>
+                          <th rowSpan={3} className="p-2 border text-center align-middle bg-gray-100">Employee Name</th>
+                          <th rowSpan={3} className="p-2 border text-center align-middle bg-gray-100">Total OT<br />Rs.</th>
+                          <th colSpan={NOTES_ARRAY.length} className="p-2 border text-center bg-gray-100">Coinage for Overtime (Rs.)</th>
+                          <th rowSpan={3} className="p-2 border text-center align-middle bg-gray-100">Total Pay<br />Rs.</th>
+                        </tr>
+                        <tr>
+                          <th colSpan={6} className="p-1.5 border text-center bg-gray-100">Notes</th>
+                          <th colSpan={4} className="p-1.5 border text-center bg-gray-100">Coins</th>
+                        </tr>
+                        <tr>
+                          {NOTES_ARRAY.map(note => (
+                            <th key={note} className="p-1.5 border text-center bg-green-100 text-green-900">{note.toLocaleString("en-US")}</th>
+                          ))}
+                        </tr>
+                      </>
+                    ) : (
                     <tr>
                       <th className="p-2 border">Emp No</th>
                       <th className="p-2 border">EPF No</th>
                       <th className="p-2 border">Name</th>
-                      <th className="p-2 border text-right">
-                        {coinageType === "ot" ? "Total OT (Rs.)" : "Cash Amount"}
-                      </th>
+                      <th className="p-2 border text-right">Cash Amount</th>
                       {NOTES_ARRAY.map(note => (
                         <th key={note} className="p-2 border text-center">
                           {note >= 100 ? `Rs. ${note}` : `Coin ${note}`}
@@ -2271,6 +3042,7 @@ const Reports = () => {
                       ))}
                       <th className="p-2 border text-right">Sum Checks</th>
                     </tr>
+                    )}
                   </thead>
                   <tbody>
                     {editableCoinage.map((emp, empIdx) => {
@@ -2294,13 +3066,25 @@ const Reports = () => {
                               />
                             </td>
                           ))}
-                          <td className={`p-2 border text-right font-semibold ${isMatch ? 'text-green-600' : 'text-red-500 font-bold'}`}>
-                            {fmt(rowSum)} {isMatch ? '✓' : '⚠️'}
+                          <td className={`p-2 border text-right font-semibold align-middle ${isMatch ? 'text-green-600' : 'text-red-500 font-bold'}`}>
+                            <div className="flex flex-wrap items-center justify-end gap-x-1 leading-tight"><span className="tabular-nums">{fmt(rowSum)}</span><span>{isMatch ? "\u2713" : "\u26A0"}</span></div>
                           </td>
                         </tr>
                       );
                     })}
                   </tbody>
+                  {coinageType === "ot" && (
+                    <tfoot>
+                      <tr className="bg-green-100 font-bold text-green-900">
+                        <td className="p-2 border" colSpan={3}>TOTAL</td>
+                        <td className="p-2 border text-right tabular-nums">{fmt(editableCoinage.reduce((a, e) => a + e.amount, 0))}</td>
+                        {NOTES_ARRAY.map(note => (
+                          <td key={note} className="p-2 border text-center">{editableCoinage.reduce((a, e) => a + (Number(e.notes[note]) || 0), 0)}</td>
+                        ))}
+                        <td className="p-2 border text-right tabular-nums">{fmt(editableCoinage.reduce((a, e) => a + NOTES_ARRAY.reduce((s, n) => s + n * (Number(e.notes[n]) || 0), 0), 0))}</td>
+                      </tr>
+                    </tfoot>
+                  )}
                 </table>
               </div>
 

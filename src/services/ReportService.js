@@ -46,6 +46,13 @@ const getLeaveSummaryData = async (month, year, company_id) => {
   }
 };
 
+const getAttendanceReportData = async (month, year, company_id) => {
+  const params = { month: Number(month), year: Number(year) };
+  if (company_id) params.company_id = company_id;
+  const response = await axios.get('/reports/attendance-report', { params });
+  return response.data;
+};
+
 const saveCoinageData = async (coinageData) => {
   const response = await axios.post(`/reports/save-coinage`, { coinage_data: coinageData });
   return response.data;
@@ -60,6 +67,7 @@ export default {
   getMonthlyReportData,
   getScheduleReportData,
   getLeaveSummaryData,
+  getAttendanceReportData,
   saveCoinageData,
   saveOtCoinageData,
 };

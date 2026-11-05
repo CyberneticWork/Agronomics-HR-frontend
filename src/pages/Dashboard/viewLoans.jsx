@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { fetchLoans, updateLoan, fetchLoanReport, requestLoanSkip, decideLoanSkip } from "@services/LoanService";
 import { exportLoanReportCSV, exportLoanReportPDF } from "@utils/loanReportExport";
 import Swal from "sweetalert2";
@@ -408,7 +408,7 @@ const ViewLoans = () => {
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
             <div className="p-6 border-b flex justify-between items-center">
-              <h3 className="text-xl font-bold">Edit Loan â€” {editLoan.loan_id}</h3>
+              <h3 className="text-xl font-bold">Edit Loan — {editLoan.loan_id}</h3>
               <button onClick={() => setEditLoan(null)} className="text-gray-400 hover:text-gray-600 text-2xl">Ã—</button>
             </div>
             <div className="p-6 grid grid-cols-2 gap-4">
